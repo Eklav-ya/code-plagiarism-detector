@@ -261,16 +261,17 @@ const CSS = `
   .diff-header { display:grid; grid-template-columns:1fr 1fr; border-bottom:1px solid var(--border2); }
   .diff-file-label { padding:8px 14px; font-family:var(--mono); font-size:11px; color:var(--muted); letter-spacing:1px; background:rgba(255,255,255,0.03); }
   .diff-file-label:first-child { border-right:1px solid var(--border2); }
-  .diff-body { display:grid; grid-template-columns:1fr 1fr; max-height:480px; overflow-y:auto; }
-  .diff-col { overflow-x:auto; }
+  .diff-body { display:grid; grid-template-columns:1fr 1fr; max-height:480px; overflow-y:auto; overflow-x:hidden; }
+  .diff-col { overflow-x:auto; min-width:0; }
   .diff-col:first-child { border-right:1px solid var(--border2); }
-  .diff-line { display:flex; align-items:flex-start; gap:10px; padding:3px 12px; font-family:var(--mono); font-size:12px; min-height:22px; white-space:pre; }
-  .diff-line.same   { background:transparent; color:var(--text); }
+  .diff-line { display:flex; align-items:flex-start; gap:8px; padding:2px 10px; font-family:var(--mono); font-size:12px; min-height:22px; white-space:pre-wrap; word-break:break-all; }
+  .diff-line.same    { background:transparent; color:var(--text); }
   .diff-line.removed { background:rgba(255,79,79,0.12); color:#ff8a8a; border-left:3px solid #ff4f4f; }
-  .diff-line.added   { background:rgba(0,229,160,0.1); color:#00e5a0; border-left:3px solid #00e5a0; }
-  .diff-line.empty   { background:rgba(255,255,255,0.02); color:transparent; border-left:3px solid transparent; }
-  .diff-ln { color:var(--muted); min-width:28px; flex-shrink:0; user-select:none; font-size:11px; padding-top:1px; }
-  .diff-sign { min-width:12px; flex-shrink:0; font-weight:700; }
+  .diff-line.added   { background:rgba(0,229,160,0.1);  color:#00e5a0; border-left:3px solid #00e5a0; }
+  .diff-line.empty   { background:rgba(255,255,255,0.02); min-height:22px; border-left:3px solid transparent; }
+  .diff-ln { color:var(--muted); min-width:24px; flex-shrink:0; user-select:none; font-size:11px; padding-top:2px; text-align:right; }
+  .diff-sign { min-width:10px; flex-shrink:0; font-weight:700; padding-top:2px; }
+  .diff-text { flex:1; min-width:0; word-break:break-all; }
   .diff-line.removed .diff-sign { color:#ff4f4f; }
   .diff-line.added   .diff-sign { color:#00e5a0; }
   .diff-line.same    .diff-sign { color:transparent; }
@@ -791,7 +792,7 @@ Return exactly this JSON structure:
                         <span className="diff-sign">
                           {row.type === "removed" ? "−" : row.type === "same" ? " " : ""}
                         </span>
-                        <span>{row.line}</span>
+                        <span className="diff-text">{row.line}</span>
                       </div>
                     ))}
                   </div>
@@ -803,7 +804,7 @@ Return exactly this JSON structure:
                         <span className="diff-sign">
                           {row.type === "added" ? "+" : row.type === "same" ? " " : ""}
                         </span>
-                        <span>{row.line}</span>
+                        <span className="diff-text">{row.line}</span>
                       </div>
                     ))}
                   </div>
