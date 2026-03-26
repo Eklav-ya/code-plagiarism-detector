@@ -29,7 +29,41 @@ function getVerdict(pct) {
   return "Original";
 }
 
-// Safe localStorage wrapper (fixes Safari private mode crash)
+// ─── LCS Diff Algorithm (GitHub-style) ───────────────────────────────────────
+function computeDiff(linesA, linesB) {
+  const N = linesA.length, M = linesB.length;
+  // Cap to avoid freezing on huge files
+  const a = linesA.slice(0, 300), b = linesB.slice(0, 300);
+  const n = a.length, m = b.length;
+
+  // Build LCS table
+  const dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+  for (let i = 1; i <= n; i++)
+    for (let j = 1; j <= m; j++)
+      dp[i][j] = a[i-1].trim() === b[j-1].trim()
+        ? dp[i-1][j-1] + 1
+        : Math.max(dp[i-1][j], dp[i][j-1]);
+
+  // Backtrack to get diff
+  const diffA = [], diffB = [];
+  let i = n, j = m;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && a[i-1].trim() === b[j-1].trim()) {
+      diffA.unshift({ type: "same", line: a[i-1] });
+      diffB.unshift({ type: "same", line: b[j-1] });
+      i--; j--;
+    } else if (j > 0 && (i === 0 || dp[i][j-1] >= dp[i-1][j])) {
+      diffB.unshift({ type: "added", line: b[j-1] });
+      diffA.unshift({ type: "empty", line: "" });
+      j--;
+    } else {
+      diffA.unshift({ type: "removed", line: a[i-1] });
+      diffB.unshift({ type: "empty", line: "" });
+      i--;
+    }
+  }
+  return { diffA, diffB };
+}
 const safeStorage = {
   get: (key) => {
     try { return JSON.parse(localStorage.getItem(key)); } catch { return null; }
@@ -222,6 +256,32 @@ const CSS = `
 
   .findings { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:1.25rem 1.5rem; font-family:var(--mono); font-size:12.5px; line-height:1.85; color:var(--text); white-space:pre-wrap; word-break:break-word; }
 
+  /* GITHUB-STYLE DIFF */
+  .diff-wrap { background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden; margin-bottom:1.25rem; }
+  .diff-header { display:grid; grid-template-columns:1fr 1fr; border-bottom:1px solid var(--border2); }
+  .diff-file-label { padding:8px 14px; font-family:var(--mono); font-size:11px; color:var(--muted); letter-spacing:1px; background:rgba(255,255,255,0.03); }
+  .diff-file-label:first-child { border-right:1px solid var(--border2); }
+  .diff-body { display:grid; grid-template-columns:1fr 1fr; max-height:480px; overflow-y:auto; }
+  .diff-col { overflow-x:auto; }
+  .diff-col:first-child { border-right:1px solid var(--border2); }
+  .diff-line { display:flex; align-items:flex-start; gap:10px; padding:3px 12px; font-family:var(--mono); font-size:12px; min-height:22px; white-space:pre; }
+  .diff-line.same   { background:transparent; color:var(--text); }
+  .diff-line.removed { background:rgba(255,79,79,0.12); color:#ff8a8a; border-left:3px solid #ff4f4f; }
+  .diff-line.added   { background:rgba(0,229,160,0.1); color:#00e5a0; border-left:3px solid #00e5a0; }
+  .diff-line.empty   { background:rgba(255,255,255,0.02); color:transparent; border-left:3px solid transparent; }
+  .diff-ln { color:var(--muted); min-width:28px; flex-shrink:0; user-select:none; font-size:11px; padding-top:1px; }
+  .diff-sign { min-width:12px; flex-shrink:0; font-weight:700; }
+  .diff-line.removed .diff-sign { color:#ff4f4f; }
+  .diff-line.added   .diff-sign { color:#00e5a0; }
+  .diff-line.same    .diff-sign { color:transparent; }
+  .diff-line.empty   .diff-sign { color:transparent; }
+  .diff-legend { display:flex; gap:16px; padding:8px 14px; border-top:1px solid var(--border); font-family:var(--mono); font-size:11px; flex-wrap:wrap; }
+  .diff-legend-item { display:flex; align-items:center; gap:6px; color:var(--muted); }
+  .diff-legend-dot { width:10px; height:10px; border-radius:2px; flex-shrink:0; }
+  .diff-body::-webkit-scrollbar { width:4px; }
+  .diff-body::-webkit-scrollbar-thumb { background:var(--border2); border-radius:2px; }
+  .diff-note { padding:8px 14px; font-family:var(--mono); font-size:11px; color:var(--muted); border-top:1px solid var(--border); }
+
   .c-none { color:var(--safe); } .c-low { color:#80d8ff; } .c-medium { color:var(--warn); } .c-high { color:var(--danger); }
   .pill-none   { color:var(--safe);   border-color:rgba(0,229,160,0.4);   background:rgba(0,229,160,0.08); }
   .pill-low    { color:#80d8ff;       border-color:rgba(128,216,255,0.4); background:rgba(128,216,255,0.08); }
@@ -326,9 +386,8 @@ export default function App() {
   const [showHistory, setShowHistory] = useState(false);
   const [toggleText, setToggleText] = useState(true);
   const [fade, setFade] = useState(true);
-  // Threshold slider + optional toggle
-  const [threshold, setThreshold] = useState(4);
-  const [usePartialMatch, setUsePartialMatch] = useState(false);
+  // Diff view state
+  const [showDiff, setShowDiff] = useState(true);
 
   const historyRef = useRef(null);
   const refA = useRef(null);
@@ -363,34 +422,22 @@ export default function App() {
     return () => document.removeEventListener("mousedown", handler);
   }, [showHistory]);
 
-  // FIX: memoized match set for O(1) lookup instead of per-render filtering
+  // LCS diff — memoized, only recomputes when code changes
+  const diff = useMemo(() => {
+    if (!codeAContent || !codeBContent) return null;
+    return computeDiff(
+      codeAContent.split("\n"),
+      codeBContent.split("\n")
+    );
+  }, [codeAContent, codeBContent]);
+
+  // Simple exact match set for matching lines section
   const matchSet = useMemo(() => {
     if (!result?.matchingLines) return new Set();
     return new Set(result.matchingLines);
   }, [result]);
 
-  // FIX: memoized intensity map so getMatchIntensity doesn't recompute per line per render
-  const intensityMap = useMemo(() => {
-    if (!result?.matchingLines) return new Map();
-    const map = new Map();
-    const matchArr = result.matchingLines;
-    for (const line of (codeAContent + "\n" + codeBContent).split("\n")) {
-      const t = line.trim();
-      if (matchArr.includes(t)) { map.set(t, 1); continue; }
-      // Only do partial matching if user opted in
-      if (!usePartialMatch) { map.set(t, 0); continue; }
-      const words = t.split(" ");
-      let count = 0;
-      for (const match of matchArr)
-        for (const word of words)
-          if (word.length > threshold && match.includes(word)) count++;
-      map.set(t, count > 2 ? 0.6 : count > 0 ? 0.3 : 0);
-    }
-    return map;
-  }, [result, codeAContent, codeBContent, threshold, usePartialMatch]);
-
   function isMatch(line) { return matchSet.has(line.trim()); }
-  function getMatchIntensity(line) { return intensityMap.get(line.trim()) ?? 0; }
 
   // FIX: debounced sync scroll to prevent jank
   function syncScroll(source, target) {
@@ -508,36 +555,26 @@ Return exactly this JSON structure:
   "ai_reason": "<short explanation>"
 }`;
 
- const callGroq = async () => {
-  const isDev = import.meta.env.DEV;
-  const url = isDev
-    ? "https://api.groq.com/openai/v1/chat/completions"
-    : "/api/check";
+      const callGroq = async () => {
+        const resp = await fetch("/api/check", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: "llama-3.3-70b-versatile",
+            temperature: 0,
+            max_tokens: 2048,
+            response_format: { type: "json_object" },
+            messages: [
+              { role: "system", content: "Return ONLY valid JSON. No text, no explanation, no markdown." },
+              { role: "user", content: prompt },
+            ],
+          }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data?.error?.message || `Groq API error ${resp.status}`);
+        return data.choices?.[0]?.message?.content || "";
+      };
 
-  const headers = {
-    "Content-Type": "application/json",
-    ...(isDev && { "Authorization": `Bearer ${import.meta.env.VITE_GROQ_API_KEY}` }),
-  };
-
-  const resp = await fetch(url, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      model: "llama-3.3-70b-versatile",
-      temperature: 0,
-      max_tokens: 2048,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: "Return ONLY valid JSON. No text, no explanation, no markdown." },
-        { role: "user", content: prompt },
-      ],
-    }),
-  });
-
-  const data = await resp.json();
-  if (!resp.ok) throw new Error(data?.error?.message || `Groq API error ${resp.status}`);
-  return data.choices?.[0]?.message?.content || "";
-};
       let parsed;
       try {
         parsed = JSON.parse(await callGroq());
@@ -606,31 +643,6 @@ Return exactly this JSON structure:
             }
           </div>
         )}
-
-        {/* Threshold slider — optional */}
-        <div className="slider-row">
-          {/* Toggle */}
-          <div className="toggle-wrap" onClick={() => setUsePartialMatch((p) => !p)}>
-            <div className={`toggle-track${usePartialMatch ? " on" : ""}`}>
-              <div className="toggle-thumb" />
-            </div>
-            <span style={{ color: usePartialMatch ? "var(--accent)" : "var(--muted)", transition: "color 0.2s" }}>
-              Partial match highlighting
-            </span>
-          </div>
-
-          {/* Slider — only shown when enabled */}
-          <div className={`slider-row${usePartialMatch ? "" : " slider-disabled"}`}
-            style={{ flex: 1, background: "none", border: "none", padding: 0, margin: 0 }}>
-            <label>Min word length:</label>
-            <input
-              type="range" min={2} max={10} value={threshold}
-              onChange={(e) => setThreshold(Number(e.target.value))}
-              disabled={!usePartialMatch}
-            />
-            <span className="slider-val">{threshold}</span>
-          </div>
-        </div>
 
         {/* UPLOAD + SWAP */}
         <div className="upload-grid">
@@ -756,26 +768,65 @@ Return exactly this JSON structure:
               ))}
             </div>
 
-            {/* FULL CODE COMPARISON */}
-            <div className="section-label">Full Code Comparison</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-              {[
-                { ref: refA, other: refB, content: codeAContent },
-                { ref: refB, other: refA, content: codeBContent },
-              ].map(({ ref, other, content }, idx) => (
-                <div key={idx} className="lines-box" ref={ref} onScroll={() => syncScroll(ref, other)}>
-                  {content.split("\n").map((line, i) => (
-                    <div key={i} className="line-row"
-                      style={{ background: `rgba(20,229,160,${getMatchIntensity(line) * 0.25})` }}>
-                      <span className="ln">{i + 1}</span>
-                      <span className="lc" style={{ color: isMatch(line) ? "#ff4f4f" : "var(--text)" }}>
-                        {line}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ))}
+            {/* GITHUB-STYLE DIFF VIEW */}
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:"10px" }}>
+              <div className="section-label" style={{ margin:0 }}>GitHub-style diff</div>
+              <button className="glass-btn" style={{ padding:"4px 12px", fontSize:"11px" }} onClick={() => setShowDiff(p => !p)}>
+                {showDiff ? "Hide diff" : "Show diff"}
+              </button>
             </div>
+
+            {showDiff && diff && (
+              <div className="diff-wrap">
+                <div className="diff-header">
+                  <div className="diff-file-label">📄 {fileA?.name ?? "File A"}</div>
+                  <div className="diff-file-label">📄 {fileB?.name ?? "File B"}</div>
+                </div>
+                <div className="diff-body">
+                  {/* LEFT — File A */}
+                  <div className="diff-col">
+                    {diff.diffA.map((row, i) => (
+                      <div key={i} className={`diff-line ${row.type}`}>
+                        <span className="diff-ln">{row.type !== "empty" ? i + 1 : ""}</span>
+                        <span className="diff-sign">
+                          {row.type === "removed" ? "−" : row.type === "same" ? " " : ""}
+                        </span>
+                        <span>{row.line}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {/* RIGHT — File B */}
+                  <div className="diff-col">
+                    {diff.diffB.map((row, i) => (
+                      <div key={i} className={`diff-line ${row.type}`}>
+                        <span className="diff-ln">{row.type !== "empty" ? i + 1 : ""}</span>
+                        <span className="diff-sign">
+                          {row.type === "added" ? "+" : row.type === "same" ? " " : ""}
+                        </span>
+                        <span>{row.line}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="diff-legend">
+                  <div className="diff-legend-item">
+                    <div className="diff-legend-dot" style={{ background:"rgba(255,79,79,0.5)" }} />
+                    Removed / only in File A
+                  </div>
+                  <div className="diff-legend-item">
+                    <div className="diff-legend-dot" style={{ background:"rgba(0,229,160,0.5)" }} />
+                    Added / only in File B
+                  </div>
+                  <div className="diff-legend-item">
+                    <div className="diff-legend-dot" style={{ background:"rgba(255,255,255,0.1)" }} />
+                    Identical lines
+                  </div>
+                </div>
+                {(codeAContent.split("\n").length > 300 || codeBContent.split("\n").length > 300) && (
+                  <div className="diff-note">⚠ Files truncated to 300 lines for performance</div>
+                )}
+              </div>
+            )}
 
             <div className="section-label">Detailed findings</div>
             <div className="findings">{result.findings}</div>
