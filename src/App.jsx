@@ -29,14 +29,39 @@ function getVerdict(pct) {
   return "Original";
 }
 
+// ─── Language Detection ───────────────────────────────────────────────────────
+const LANG_MAP = {
+  // By extension
+  js:   { label: "JavaScript", emoji: "🟨" },
+  jsx:  { label: "React/JSX",  emoji: "⚛️"  },
+  ts:   { label: "TypeScript", emoji: "🔷" },
+  tsx:  { label: "React/TSX",  emoji: "⚛️"  },
+  py:   { label: "Python",     emoji: "🐍" },
+  java: { label: "Java",       emoji: "☕" },
+  c:    { label: "C",          emoji: "⚙️"  },
+  cpp:  { label: "C++",        emoji: "⚙️"  },
+  cs:   { label: "C#",         emoji: "🟣" },
+  go:   { label: "Go",         emoji: "🐹" },
+  rs:   { label: "Rust",       emoji: "🦀" },
+  rb:   { label: "Ruby",       emoji: "💎" },
+  php:  { label: "PHP",        emoji: "🐘" },
+  swift:{ label: "Swift",      emoji: "🍎" },
+  kt:   { label: "Kotlin",     emoji: "🎯" },
+  html: { label: "HTML",       emoji: "🌐" },
+  css:  { label: "CSS",        emoji: "🎨" },
+  txt:  { label: "Text",       emoji: "📄" },
+};
+
+function detectLanguage(file) {
+  if (!file) return null;
+  const ext = file.name.split(".").pop()?.toLowerCase();
+  return LANG_MAP[ext] || { label: ext?.toUpperCase() || "Unknown", emoji: "📄" };
+}
+
 // ─── LCS Diff Algorithm (GitHub-style) ───────────────────────────────────────
 function computeDiff(linesA, linesB) {
-  const N = linesA.length, M = linesB.length;
-  // Cap to avoid freezing on huge files
   const a = linesA.slice(0, 300), b = linesB.slice(0, 300);
   const n = a.length, m = b.length;
-
-  // Build LCS table
   const dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
   for (let i = 1; i <= n; i++)
     for (let j = 1; j <= m; j++)
@@ -44,7 +69,6 @@ function computeDiff(linesA, linesB) {
         ? dp[i-1][j-1] + 1
         : Math.max(dp[i-1][j], dp[i][j-1]);
 
-  // Backtrack to get diff
   const diffA = [], diffB = [];
   let i = n, j = m;
   while (i > 0 || j > 0) {
@@ -64,6 +88,7 @@ function computeDiff(linesA, linesB) {
   }
   return { diffA, diffB };
 }
+
 const safeStorage = {
   get: (key) => {
     try { return JSON.parse(localStorage.getItem(key)); } catch { return null; }
@@ -75,6 +100,83 @@ const safeStorage = {
     try { localStorage.removeItem(key); } catch {}
   },
 };
+
+// ─── Groq API caller ──────────────────────────────────────────────────────────
+async function callGroqAPI(payload) {
+  const resp = await fetch("/api/check", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data?.error?.message || `Groq API error ${resp.status}`);
+  return data.choices?.[0]?.message?.content || "";
+}
+
+async function analyzeFilePair(fileA, fileB, codeA, codeB) {
+  const prompt = `You are an expert code plagiarism analyst.
+
+Analyze the two code files below and return ONLY a valid JSON object. No markdown, no backticks, no extra text — pure JSON only.
+
+File A (${fileA.name}):
+${codeA.slice(0, 4000)}
+
+File B (${fileB.name}):
+${codeB.slice(0, 4000)}
+
+Return exactly this JSON structure:
+{
+  "similarity_percent": <integer 0-100>,
+  "logic_similarity": <integer 0-100>,
+  "structure_similarity": <integer 0-100>,
+  "token_overlap": <integer 0-100>,
+  "human_score": <integer 0-100>,
+  "ai_generated_likelihood": <integer 0-100>,
+  "language_a": "<string>",
+  "language_b": "<string>",
+  "summary": "<text>",
+  "findings": "<text>",
+  "ai_reason": "<short explanation>"
+}`;
+
+  const payload = {
+    model: "llama-3.3-70b-versatile",
+    temperature: 0,
+    max_tokens: 2048,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: "Return ONLY valid JSON. No text, no explanation, no markdown." },
+      { role: "user", content: prompt },
+    ],
+  };
+
+  let parsed;
+  try {
+    parsed = JSON.parse(await callGroqAPI(payload));
+  } catch {
+    try { parsed = JSON.parse(await callGroqAPI(payload)); }
+    catch { throw new Error("AI is not returning valid JSON. Please try again."); }
+  }
+
+  const matchingLines = getMatchingLines(codeA, codeB);
+  return { ...parsed, matchingLines, nameA: fileA.name, nameB: fileB.name, timestamp: new Date().toLocaleString() };
+}
+
+// ─── Heatmap cell color ───────────────────────────────────────────────────────
+function heatColor(pct) {
+  if (pct === null || pct === undefined) return "rgba(255,255,255,0.04)";
+  if (pct >= 70) return "rgba(255,79,79,0.35)";
+  if (pct >= 40) return "rgba(245,166,35,0.30)";
+  if (pct >= 15) return "rgba(128,216,255,0.20)";
+  return "rgba(0,229,160,0.15)";
+}
+function heatTextColor(pct) {
+  if (pct === null || pct === undefined) return "var(--muted)";
+  if (pct >= 70) return "#ff6b6b";
+  if (pct >= 40) return "#f5a623";
+  if (pct >= 15) return "#80d8ff";
+  return "#00e5a0";
+}
 
 const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Syne:wght@400;500;700&display=swap');
@@ -104,17 +206,15 @@ const CSS = `
   .header h1 { font-size: clamp(2.5rem,6vw,3.5rem); font-weight:700; line-height:1.2; letter-spacing:-1px; color:#fff; margin-bottom:16px; transition: opacity 0.4s ease, transform 0.4s ease; }
   .header p { max-width:700px; margin:0 auto; font-size:15px; color:#aaa; line-height:1.8; font-family:var(--sans); }
 
-  /* THRESHOLD SLIDER */
-  .slider-row { display:flex; align-items:center; gap:12px; margin-bottom:1rem; padding:12px 16px; background:var(--surface); border:1px solid var(--border); border-radius:10px; font-family:var(--mono); font-size:12px; color:var(--muted); flex-wrap:wrap; }
-  .slider-row label { white-space:nowrap; }
-  .slider-row input[type=range] { flex:1; accent-color: var(--accent); cursor:pointer; min-width:80px; }
-  .slider-val { color:var(--accent); font-weight:600; min-width:30px; text-align:right; }
-  .toggle-wrap { display:flex; align-items:center; gap:8px; cursor:pointer; user-select:none; }
-  .toggle-track { width:34px; height:18px; border-radius:9px; background:var(--border2); position:relative; transition:background 0.2s; flex-shrink:0; }
-  .toggle-track.on { background:var(--accent2); }
-  .toggle-thumb { position:absolute; top:3px; left:3px; width:12px; height:12px; border-radius:50%; background:#fff; transition:transform 0.2s; }
-  .toggle-track.on .toggle-thumb { transform:translateX(16px); }
-  .slider-disabled { opacity:0.35; pointer-events:none; }
+  /* MODE SWITCHER */
+  .mode-tabs { display:flex; gap:0; background:var(--surface); border:1px solid var(--border2); border-radius:10px; padding:4px; margin-bottom:1.5rem; }
+  .mode-tab {
+    flex:1; padding:8px 16px; border:none; border-radius:7px; cursor:pointer;
+    font-family:var(--mono); font-size:12px; font-weight:500; letter-spacing:0.5px;
+    background:transparent; color:var(--muted); transition:all 0.2s;
+  }
+  .mode-tab.active { background:var(--accent); color:#000; font-weight:600; }
+  .mode-tab:not(.active):hover { color:var(--text); background:rgba(255,255,255,0.05); }
 
   /* UPLOAD GRID */
   .upload-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:1rem; }
@@ -133,7 +233,6 @@ const CSS = `
   .dz-label { font-size:11px; font-family:var(--mono); color:var(--muted); letter-spacing:1px; text-transform:uppercase; margin-bottom:4px; }
   .dz-name { font-size:13px; font-family:var(--mono); color:var(--accent); font-weight:500; word-break:break-all; }
   .dz-hint { font-size:12px; color:var(--muted); font-family:var(--mono); }
-  /* FIX: remove button on filled drop zone */
   .dz-remove {
     position:absolute; top:8px; right:10px; background:rgba(255,79,79,0.15);
     border:1px solid rgba(255,79,79,0.3); border-radius:6px; color:#ff4f4f;
@@ -141,6 +240,79 @@ const CSS = `
     z-index:2; transition:background 0.15s;
   }
   .dz-remove:hover { background:rgba(255,79,79,0.3); }
+
+  /* LANGUAGE BADGE */
+  .lang-badge {
+    display:inline-flex; align-items:center; gap:5px;
+    background:rgba(0,229,160,0.1); border:1px solid rgba(0,229,160,0.25);
+    border-radius:20px; padding:3px 10px; font-family:var(--mono);
+    font-size:11px; color:var(--accent); margin-top:8px;
+    animation: fadeUp 0.3s ease both;
+  }
+
+  /* BATCH UPLOAD */
+  .batch-drop {
+    border:1.5px dashed var(--border2); border-radius:12px; padding:2.5rem 2rem;
+    text-align:center; cursor:pointer; background:rgba(20,20,30,0.6);
+    backdrop-filter:blur(12px); position:relative; transition:border-color 0.2s, background 0.2s;
+    margin-bottom:1rem;
+  }
+  .batch-drop:hover, .batch-drop.drag { border-color:var(--accent); background:rgba(0,229,160,0.04); }
+  .batch-drop input { position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%; }
+  .batch-files-grid {
+    display:flex; flex-wrap:wrap; gap:8px; margin-bottom:1rem;
+  }
+  .batch-file-chip {
+    display:flex; align-items:center; gap:6px;
+    background:var(--surface); border:1px solid var(--border2);
+    border-radius:8px; padding:5px 10px; font-family:var(--mono); font-size:12px;
+    animation: fadeUp 0.2s ease both;
+  }
+  .batch-file-chip .chip-remove {
+    background:none; border:none; color:var(--muted); cursor:pointer;
+    font-size:12px; padding:0 0 0 4px; line-height:1;
+    transition:color 0.15s;
+  }
+  .batch-file-chip .chip-remove:hover { color:var(--danger); }
+
+  /* HEATMAP MATRIX */
+  .matrix-wrap { overflow-x:auto; margin-bottom:1.5rem; }
+  .matrix-table { border-collapse:collapse; min-width:100%; font-family:var(--mono); font-size:12px; }
+  .matrix-table th {
+    padding:8px 12px; text-align:left; color:var(--muted); font-weight:500;
+    font-size:11px; letter-spacing:0.5px; border-bottom:1px solid var(--border2);
+    white-space:nowrap; max-width:120px; overflow:hidden; text-overflow:ellipsis;
+  }
+  .matrix-table th.corner { background:var(--surface); border-right:1px solid var(--border2); }
+  .matrix-table td {
+    padding:0; border:1px solid rgba(255,255,255,0.05); min-width:72px;
+    text-align:center; position:relative;
+  }
+  .matrix-cell {
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:10px 8px; cursor:pointer; transition:filter 0.15s, transform 0.1s;
+    min-height:58px; gap:3px;
+  }
+  .matrix-cell:hover { filter:brightness(1.3); transform:scale(1.04); z-index:2; position:relative; }
+  .matrix-cell.self { cursor:default; }
+  .matrix-cell.self:hover { filter:none; transform:none; }
+  .matrix-pct { font-size:15px; font-weight:600; line-height:1; }
+  .matrix-verdict { font-size:9px; letter-spacing:0.5px; text-transform:uppercase; opacity:0.8; }
+  .matrix-loading { display:flex; align-items:center; justify-content:center; min-height:58px; }
+  .matrix-spinner { width:14px; height:14px; border:2px solid rgba(255,255,255,0.1); border-top-color:var(--accent); border-radius:50%; animation:spin 0.7s linear infinite; }
+  .matrix-row-label {
+    padding:8px 12px; font-family:var(--mono); font-size:11px; color:var(--muted);
+    white-space:nowrap; max-width:120px; overflow:hidden; text-overflow:ellipsis;
+    border-right:1px solid var(--border2); background:rgba(255,255,255,0.02);
+    text-align:right;
+  }
+  .matrix-legend { display:flex; gap:16px; flex-wrap:wrap; padding:10px 0; font-family:var(--mono); font-size:11px; color:var(--muted); }
+  .matrix-legend-item { display:flex; align-items:center; gap:6px; }
+  .matrix-legend-dot { width:12px; height:12px; border-radius:3px; flex-shrink:0; }
+  .batch-progress { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:1.25rem 1.5rem; margin-bottom:1rem; }
+  .batch-progress-bar { height:4px; background:var(--border2); border-radius:2px; overflow:hidden; margin-top:10px; }
+  .batch-progress-fill { height:100%; background:linear-gradient(90deg,#00e5a0,#00b37a); transition:width 0.4s ease; }
+  .batch-status { font-family:var(--mono); font-size:12px; color:var(--muted); display:flex; justify-content:space-between; }
 
   /* BUTTONS */
   .check-btn {
@@ -155,7 +327,6 @@ const CSS = `
   .check-btn:disabled { opacity:0.35; cursor:not-allowed; }
   .check-btn.busy { background:var(--surface2); color:var(--accent); border:1.5px solid var(--accent2); }
 
-  /* FIX: styled glass download buttons */
   .glass-btn {
     padding:10px 16px; border-radius:8px; cursor:pointer;
     font-family:var(--mono); font-size:12px; font-weight:500; letter-spacing:0.5px;
@@ -240,7 +411,6 @@ const CSS = `
   .line-row:last-child { border-bottom:none; }
   .ln { color:var(--muted); min-width:22px; flex-shrink:0; user-select:none; }
   .lc { color:var(--text); word-break:break-all; flex:1; }
-  /* FIX: copy button on matching lines */
   .copy-btn {
     opacity:0; position:absolute; right:8px; top:50%; transform:translateY(-50%);
     background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15);
@@ -283,6 +453,28 @@ const CSS = `
   .diff-body::-webkit-scrollbar-thumb { background:var(--border2); border-radius:2px; }
   .diff-note { padding:8px 14px; font-family:var(--mono); font-size:11px; color:var(--muted); border-top:1px solid var(--border); }
 
+  /* MODAL */
+  .modal-overlay {
+    position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:2000;
+    display:flex; align-items:center; justify-content:center; padding:1.5rem;
+    backdrop-filter:blur(8px); animation:fadeUp 0.2s ease both;
+  }
+  .modal-box {
+    background:var(--surface); border:1px solid var(--border2); border-radius:16px;
+    width:100%; max-width:900px; max-height:90vh; overflow-y:auto;
+    padding:2rem; position:relative; box-shadow:0 40px 100px rgba(0,0,0,0.7);
+  }
+  .modal-box::-webkit-scrollbar { width:4px; }
+  .modal-box::-webkit-scrollbar-thumb { background:var(--border2); border-radius:2px; }
+  .modal-close {
+    position:absolute; top:14px; right:16px;
+    background:rgba(255,255,255,0.08); border:1px solid var(--border2);
+    border-radius:8px; color:var(--muted); font-size:14px; padding:4px 10px;
+    cursor:pointer; font-family:var(--mono); transition:all 0.15s; z-index:1;
+  }
+  .modal-close:hover { background:rgba(255,79,79,0.2); color:var(--danger); border-color:rgba(255,79,79,0.4); }
+  .modal-title { font-family:var(--mono); font-size:13px; color:var(--accent); margin-bottom:1.5rem; letter-spacing:1px; padding-right:40px; }
+
   .c-none { color:var(--safe); } .c-low { color:#80d8ff; } .c-medium { color:var(--warn); } .c-high { color:var(--danger); }
   .pill-none   { color:var(--safe);   border-color:rgba(0,229,160,0.4);   background:rgba(0,229,160,0.08); }
   .pill-low    { color:#80d8ff;       border-color:rgba(128,216,255,0.4); background:rgba(128,216,255,0.08); }
@@ -290,11 +482,19 @@ const CSS = `
   .pill-high   { color:var(--danger); border-color:rgba(255,79,79,0.4);   background:rgba(255,79,79,0.08); }
   .stroke-none { stroke:var(--safe); } .stroke-low { stroke:#80d8ff; } .stroke-medium { stroke:var(--warn); } .stroke-high { stroke:var(--danger); }
   .fill-none { background:var(--safe); } .fill-low { background:#80d8ff; } .fill-medium { background:var(--warn); } .fill-high { background:var(--danger); }
+
+  /* SLIDER */
+  .slider-row { display:flex; align-items:center; gap:12px; margin-bottom:1rem; padding:12px 16px; background:var(--surface); border:1px solid var(--border); border-radius:10px; font-family:var(--mono); font-size:12px; color:var(--muted); flex-wrap:wrap; }
+  .slider-row label { white-space:nowrap; }
+  .slider-row input[type=range] { flex:1; accent-color: var(--accent); cursor:pointer; min-width:80px; }
+  .slider-val { color:var(--accent); font-weight:600; min-width:30px; text-align:right; }
 `;
 
 // ─── DropZone ────────────────────────────────────────────────────────────────
 function DropZone({ label, file, onFile, onRemove }) {
   const [drag, setDrag] = useState(false);
+  const lang = detectLanguage(file);
+
   const onDrop = useCallback((e) => {
     e.preventDefault();
     setDrag(false);
@@ -309,7 +509,6 @@ function DropZone({ label, file, onFile, onRemove }) {
       onDragLeave={() => setDrag(false)}
       onDrop={onDrop}
     >
-      {/* FIX: File removal button */}
       {file && (
         <button
           className="dz-remove"
@@ -324,11 +523,80 @@ function DropZone({ label, file, onFile, onRemove }) {
       />
       <span className="dz-icon">{file ? "✦" : "↑"}</span>
       <div className="dz-label">{label}</div>
-      {file
-        ? <div className="dz-name">{file.name}</div>
-        : <div className="dz-hint">click or drag & drop</div>
-      }
+      {file ? (
+        <>
+          <div className="dz-name">{file.name}</div>
+          {lang && (
+            <div style={{ display: "flex", justifyContent: "center", marginTop: "6px" }}>
+              <span className="lang-badge">
+                <span>{lang.emoji}</span>
+                <span>{lang.label}</span>
+              </span>
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="dz-hint">click or drag & drop</div>
+      )}
     </div>
+  );
+}
+
+// ─── BatchDropZone ────────────────────────────────────────────────────────────
+function BatchDropZone({ files, onFiles, onRemoveFile }) {
+  const [drag, setDrag] = useState(false);
+
+  const handleDrop = useCallback((e) => {
+    e.preventDefault();
+    setDrag(false);
+    const dropped = Array.from(e.dataTransfer.files);
+    if (dropped.length) onFiles(dropped);
+  }, [onFiles]);
+
+  const handleChange = (e) => {
+    const picked = Array.from(e.target.files);
+    if (picked.length) onFiles(picked);
+    e.target.value = "";
+  };
+
+  return (
+    <>
+      <div
+        className={`batch-drop${drag ? " drag" : ""}`}
+        onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
+        onDragLeave={() => setDrag(false)}
+        onDrop={handleDrop}
+      >
+        <input
+          type="file"
+          multiple
+          accept=".js,.jsx,.ts,.tsx,.py,.java,.c,.cpp,.cs,.go,.rs,.rb,.php,.swift,.kt,.html,.css,.txt"
+          onChange={handleChange}
+        />
+        <span style={{ fontSize: "28px", display: "block", marginBottom: "8px" }}>📂</span>
+        <div style={{ fontFamily: "var(--mono)", fontSize: "13px", color: "var(--accent)", marginBottom: "4px" }}>
+          Drop multiple files here
+        </div>
+        <div style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--muted)" }}>
+          Minimum 3 files · All pairs will be compared
+        </div>
+      </div>
+
+      {files.length > 0 && (
+        <div className="batch-files-grid">
+          {files.map((f, i) => {
+            const lang = detectLanguage(f);
+            return (
+              <div key={i} className="batch-file-chip">
+                <span>{lang?.emoji}</span>
+                <span style={{ color: "var(--text)", maxWidth: "140px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</span>
+                <button className="chip-remove" onClick={() => onRemoveFile(i)} title="Remove">✕</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -373,9 +641,251 @@ function CopyButton({ text }) {
   );
 }
 
+// ─── ResultDetail (used in modal + main view) ─────────────────────────────────
+function ResultDetail({ result, fileAName, fileBName, codeAContent, codeBContent }) {
+  const [showDiff, setShowDiff] = useState(true);
+  const humanScore = result?.human_score ?? (result ? 100 - result.similarity_percent : 0);
+  const level = getLevel(result.similarity_percent);
+
+  const diff = useMemo(() => {
+    if (!codeAContent || !codeBContent) return null;
+    return computeDiff(codeAContent.split("\n"), codeBContent.split("\n"));
+  }, [codeAContent, codeBContent]);
+
+  function getLevelLabel(v) {
+    if (v >= 70) return "HIGH";
+    if (v >= 40) return "MEDIUM";
+    if (v >= 15) return "LOW";
+    return "NONE";
+  }
+
+  return (
+    <>
+      <div className="score-card">
+        <div className="score-inner">
+          <ScoreRing pct={result.similarity_percent} level={level} />
+          <div className="stat-row">
+            <div className="stat-item">
+              <div className="stat-label">Human-written</div>
+              <div className="stat-value" style={{ color: "#00e5a0" }}>{humanScore}%</div>
+            </div>
+            <div className="divider-v" />
+            <div className="stat-item">
+              <div className="stat-label">AI-generated</div>
+              <div className="stat-value" style={{ color: "#b08dff" }}>{result.ai_generated_likelihood ?? "—"}%</div>
+            </div>
+            <div className="divider-v" />
+            <div className="stat-item">
+              <div className="stat-label">Plagiarism</div>
+              <div className="stat-value" style={{ color: "#ff4f4f" }}>{result.similarity_percent}%</div>
+            </div>
+          </div>
+          <div className="prog-bar">
+            <div className="prog-fill" style={{ width: `${humanScore}%` }} />
+          </div>
+          {result.ai_reason && (
+            <div style={{ marginTop: "10px", fontSize: "11px", color: "var(--muted)", fontFamily: "var(--mono)", lineHeight: "1.6" }}>
+              🤖 {result.ai_reason}
+            </div>
+          )}
+        </div>
+        <div className="score-info">
+          <div className={`verdict-pill pill-${level}`}>{getVerdict(result.similarity_percent)}</div>
+          <div className="score-summary">{result.summary}</div>
+          <div className="lang-row">{result.language_a} → {result.language_b}</div>
+        </div>
+      </div>
+
+      <div className="metrics">
+        {[
+          { label: "Logic similarity", val: result.logic_similarity },
+          { label: "Structure match",  val: result.structure_similarity },
+          { label: "Token overlap",    val: result.token_overlap },
+        ].map(({ label, val }) => {
+          const lv = getLevel(val);
+          return (
+            <div className="metric" key={label}>
+              <div className="m-lbl">{label}</div>
+              <div className={`m-val c-${lv}`}>{Math.round(val)}%</div>
+              <div className="m-bar">
+                <div className={`m-fill fill-${lv}`} style={{ width: `${val}%` }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="section-label">
+        Matching lines — {result.matchingLines?.length ?? 0} exact match{result.matchingLines?.length !== 1 ? "es" : ""} found
+      </div>
+      <div className="lines-box">
+        {!result.matchingLines?.length
+          ? <div className="no-lines">No exact line matches detected</div>
+          : result.matchingLines.slice(0, 100).map((line, i) => (
+            <div key={i} className="line-row" style={{ background: "rgba(255,79,79,0.12)" }}>
+              <span className="ln">{i + 1}</span>
+              <span className="lc" style={{ color: "#ff4f4f" }}>{line}</span>
+              <CopyButton text={line} />
+            </div>
+          ))
+        }
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
+        <div className="section-label" style={{ margin: 0 }}>GitHub-style diff</div>
+        <button className="glass-btn" style={{ padding: "4px 12px", fontSize: "11px" }} onClick={() => setShowDiff(p => !p)}>
+          {showDiff ? "Hide diff" : "Show diff"}
+        </button>
+      </div>
+
+      {showDiff && diff && (
+        <div className="diff-wrap">
+          <div className="diff-header">
+            <div className="diff-file-label">📄 {fileAName}</div>
+            <div className="diff-file-label">📄 {fileBName}</div>
+          </div>
+          <div className="diff-body">
+            <div className="diff-col">
+              {diff.diffA.map((row, i) => (
+                <div key={i} className={`diff-line ${row.type}`}>
+                  <span className="diff-ln">{row.type !== "empty" ? i + 1 : ""}</span>
+                  <span className="diff-sign">{row.type === "removed" ? "−" : row.type === "same" ? " " : ""}</span>
+                  <span className="diff-text">{row.line}</span>
+                </div>
+              ))}
+            </div>
+            <div className="diff-col">
+              {diff.diffB.map((row, i) => (
+                <div key={i} className={`diff-line ${row.type}`}>
+                  <span className="diff-ln">{row.type !== "empty" ? i + 1 : ""}</span>
+                  <span className="diff-sign">{row.type === "added" ? "+" : row.type === "same" ? " " : ""}</span>
+                  <span className="diff-text">{row.line}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="diff-legend">
+            <div className="diff-legend-item"><div className="diff-legend-dot" style={{ background: "rgba(255,79,79,0.5)" }} />Only in File A</div>
+            <div className="diff-legend-item"><div className="diff-legend-dot" style={{ background: "rgba(0,229,160,0.5)" }} />Only in File B</div>
+            <div className="diff-legend-item"><div className="diff-legend-dot" style={{ background: "rgba(255,255,255,0.15)" }} />Identical — possible plagiarism</div>
+          </div>
+        </div>
+      )}
+
+      <div className="section-label">Detailed findings</div>
+      <div className="findings">{result.findings}</div>
+    </>
+  );
+}
+
+// ─── BatchMatrix ──────────────────────────────────────────────────────────────
+function BatchMatrix({ files, matrix, loadingCells, onCellClick }) {
+  const shortName = (f) => f.name.length > 16 ? f.name.slice(0, 14) + "…" : f.name;
+
+  return (
+    <div className="matrix-wrap">
+      <table className="matrix-table">
+        <thead>
+          <tr>
+            <th className="corner" style={{ minWidth: "100px" }}></th>
+            {files.map((f, j) => {
+              const lang = detectLanguage(f);
+              return (
+                <th key={j} title={f.name}>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "2px" }}>
+                    <span style={{ fontSize: "14px" }}>{lang?.emoji}</span>
+                    <span>{shortName(f)}</span>
+                  </div>
+                </th>
+              );
+            })}
+          </tr>
+        </thead>
+        <tbody>
+          {files.map((fRow, i) => {
+            const langRow = detectLanguage(fRow);
+            return (
+              <tr key={i}>
+                <td className="matrix-row-label" title={fRow.name}>
+                  <span style={{ marginRight: "6px" }}>{langRow?.emoji}</span>
+                  {shortName(fRow)}
+                </td>
+                {files.map((fCol, j) => {
+                  if (i === j) {
+                    return (
+                      <td key={j}>
+                        <div className="matrix-cell self" style={{ background: "rgba(255,255,255,0.03)" }}>
+                          <span style={{ color: "var(--muted)", fontSize: "18px" }}>—</span>
+                        </div>
+                      </td>
+                    );
+                  }
+                  const key = `${Math.min(i,j)}-${Math.max(i,j)}`;
+                  const res = matrix[key];
+                  const isLoading = loadingCells.has(key);
+
+                  if (isLoading) {
+                    return (
+                      <td key={j}>
+                        <div className="matrix-cell" style={{ background: "rgba(255,255,255,0.04)" }}>
+                          <div className="matrix-loading">
+                            <div className="matrix-spinner" />
+                          </div>
+                        </div>
+                      </td>
+                    );
+                  }
+
+                  if (!res) {
+                    return (
+                      <td key={j}>
+                        <div className="matrix-cell" style={{ background: "rgba(255,255,255,0.02)" }}>
+                          <span style={{ color: "var(--muted)", fontSize: "11px", fontFamily: "var(--mono)" }}>–</span>
+                        </div>
+                      </td>
+                    );
+                  }
+
+                  const pct = res.similarity_percent;
+                  const textColor = heatTextColor(pct);
+                  return (
+                    <td key={j}>
+                      <div
+                        className="matrix-cell"
+                        style={{ background: heatColor(pct) }}
+                        onClick={() => onCellClick(i, j, res)}
+                        title={`${fRow.name} vs ${fCol.name}: ${pct}%`}
+                      >
+                        <span className="matrix-pct" style={{ color: textColor }}>{pct}%</span>
+                        <span className="matrix-verdict" style={{ color: textColor }}>{getVerdict(pct)}</span>
+                      </div>
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+
+      <div className="matrix-legend">
+        <div className="matrix-legend-item"><div className="matrix-legend-dot" style={{ background: "rgba(255,79,79,0.5)" }} />&ge;70% — Definite Plagiarism</div>
+        <div className="matrix-legend-item"><div className="matrix-legend-dot" style={{ background: "rgba(245,166,35,0.5)" }} />40–69% — Likely Plagiarized</div>
+        <div className="matrix-legend-item"><div className="matrix-legend-dot" style={{ background: "rgba(128,216,255,0.4)" }} />15–39% — Suspicious</div>
+        <div className="matrix-legend-item"><div className="matrix-legend-dot" style={{ background: "rgba(0,229,160,0.3)" }} />&lt;15% — Original</div>
+        <div className="matrix-legend-item" style={{ marginLeft: "auto", color: "var(--accent)", cursor: "pointer" }}>
+          Click any cell to view full diff →
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── App ──────────────────────────────────────────────────────────────────────
 export default function App() {
+  const [mode, setMode] = useState("pair"); // "pair" | "batch"
 
+  // Pair mode state
   const [fileA, setFileA] = useState(null);
   const [fileB, setFileB] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -383,28 +893,35 @@ export default function App() {
   const [result, setResult] = useState(null);
   const [codeAContent, setCodeAContent] = useState("");
   const [codeBContent, setCodeBContent] = useState("");
+
+  // Batch mode state
+  const [batchFiles, setBatchFiles] = useState([]);
+  const [batchMatrix, setBatchMatrix] = useState({});
+  const [batchLoadingCells, setBatchLoadingCells] = useState(new Set());
+  const [batchProgress, setBatchProgress] = useState({ done: 0, total: 0 });
+  const [batchRunning, setBatchRunning] = useState(false);
+  const [batchContents, setBatchContents] = useState({});
+
+  // Modal for batch cell drill-down
+  const [modalData, setModalData] = useState(null); // { result, iA, iB }
+
+  // Shared state
   const [history, setHistory] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
   const [toggleText, setToggleText] = useState(true);
   const [fade, setFade] = useState(true);
-  // Diff view state
-  const [showDiff, setShowDiff] = useState(true);
 
   const historyRef = useRef(null);
-  const refA = useRef(null);
-  const refB = useRef(null);
   const scrollSyncActive = useRef(false);
 
   const humanScore = result?.human_score ?? (result ? 100 - result.similarity_percent : 0);
   const level = result ? getLevel(result.similarity_percent) : "none";
 
-  // Load history safely (fixes Safari private mode)
   useEffect(() => {
     const saved = safeStorage.get("plag_history");
     if (saved) setHistory(saved);
   }, []);
 
-  // Animated headline toggle
   useEffect(() => {
     const interval = setInterval(() => {
       setFade(false);
@@ -413,7 +930,6 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Close history on outside click
   useEffect(() => {
     const handler = (e) => {
       if (showHistory && historyRef.current && !historyRef.current.contains(e.target))
@@ -423,52 +939,123 @@ export default function App() {
     return () => document.removeEventListener("mousedown", handler);
   }, [showHistory]);
 
-  // LCS diff — memoized, only recomputes when code changes
-  const diff = useMemo(() => {
-    if (!codeAContent || !codeBContent) return null;
-    return computeDiff(
-      codeAContent.split("\n"),
-      codeBContent.split("\n")
-    );
-  }, [codeAContent, codeBContent]);
-
-  // Simple exact match set for matching lines section
-  const matchSet = useMemo(() => {
-    if (!result?.matchingLines) return new Set();
-    return new Set(result.matchingLines);
-  }, [result]);
-
-  function isMatch(line) { return matchSet.has(line.trim()); }
-
-  // FIX: debounced sync scroll to prevent jank
-  function syncScroll(source, target) {
-    if (scrollSyncActive.current) return;
-    scrollSyncActive.current = true;
-    requestAnimationFrame(() => {
-      if (source.current && target.current)
-        target.current.scrollTop = source.current.scrollTop;
-      scrollSyncActive.current = false;
-    });
-  }
-
-  function getLevelLabel(v) {
-    if (v >= 70) return "HIGH";
-    if (v >= 40) return "MEDIUM";
-    if (v >= 15) return "LOW";
-    return "NONE";
-  }
+  // Keyboard shortcut: Cmd/Ctrl+Enter to analyze
+  useEffect(() => {
+    const handler = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        if (mode === "pair" && fileA && fileB && !loading) handleCheck();
+        if (mode === "batch" && batchFiles.length >= 3 && !batchRunning) handleBatchCheck();
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [mode, fileA, fileB, loading, batchFiles, batchRunning]);
 
   function clearHistory() {
     safeStorage.remove("plag_history");
     setHistory([]);
   }
 
-  // FIX: swap files instead of requiring re-upload
   function swapFiles() {
     setFileA(fileB);
     setFileB(fileA);
     setCodeAContent(codeBContent);
     setCodeBContent(codeAContent);
+  }
+
+  // ─── Batch file management ────────────────────────────────────────────────
+  function addBatchFiles(newFiles) {
+    setBatchFiles((prev) => {
+      const existingNames = new Set(prev.map(f => f.name));
+      const unique = newFiles.filter(f => !existingNames.has(f.name));
+      return [...prev, ...unique];
+    });
+    // Reset matrix when files change
+    setBatchMatrix({});
+    setBatchProgress({ done: 0, total: 0 });
+  }
+
+  function removeBatchFile(idx) {
+    setBatchFiles((prev) => prev.filter((_, i) => i !== idx));
+    setBatchMatrix({});
+    setBatchProgress({ done: 0, total: 0 });
+  }
+
+  // ─── Batch analysis ───────────────────────────────────────────────────────
+  async function handleBatchCheck() {
+    if (batchFiles.length < 3) { setError("Please upload at least 3 files for batch mode."); return; }
+    setError("");
+    setBatchRunning(true);
+    setBatchMatrix({});
+
+    // Read all file contents first
+    const contents = {};
+    for (const f of batchFiles) {
+      contents[f.name] = await readFile(f);
+    }
+    setBatchContents(contents);
+
+    // Build pair list (upper triangle only, mirror below)
+    const pairs = [];
+    for (let i = 0; i < batchFiles.length; i++)
+      for (let j = i + 1; j < batchFiles.length; j++)
+        pairs.push([i, j]);
+
+    setBatchProgress({ done: 0, total: pairs.length });
+    setBatchLoadingCells(new Set(pairs.map(([i, j]) => `${i}-${j}`)));
+
+    // Run pairs with concurrency limit of 3 to avoid rate limiting
+    const CONCURRENCY = 3;
+    let idx = 0;
+
+    async function runNext() {
+      while (idx < pairs.length) {
+        const [i, j] = pairs[idx++];
+        const key = `${i}-${j}`;
+        const fA = batchFiles[i], fB = batchFiles[j];
+        try {
+          const res = await analyzeFilePair(fA, fB, contents[fA.name], contents[fB.name]);
+          setBatchMatrix((prev) => ({ ...prev, [key]: res }));
+        } catch (e) {
+          setBatchMatrix((prev) => ({
+            ...prev,
+            [key]: { similarity_percent: 0, error: e.message, nameA: fA.name, nameB: fB.name, matchingLines: [] }
+          }));
+        }
+        setBatchLoadingCells((prev) => { const s = new Set(prev); s.delete(key); return s; });
+        setBatchProgress((prev) => ({ ...prev, done: prev.done + 1 }));
+      }
+    }
+
+    const workers = Array.from({ length: Math.min(CONCURRENCY, pairs.length) }, runNext);
+    await Promise.all(workers);
+    setBatchRunning(false);
+  }
+
+  // ─── Modal open/close ─────────────────────────────────────────────────────
+  function openModal(iA, iB, res) {
+    setModalData({ result: res, iA, iB });
+  }
+  function closeModal() { setModalData(null); }
+
+  // ─── Pair mode analysis ───────────────────────────────────────────────────
+  async function handleCheck() {
+    if (!fileA || !fileB) { setError("Please upload both code files first."); return; }
+    setError(""); setResult(null); setLoading(true);
+    try {
+      const [codeA, codeB] = await Promise.all([readFile(fileA), readFile(fileB)]);
+      setCodeAContent(codeA);
+      setCodeBContent(codeB);
+      const newResult = await analyzeFilePair(fileA, fileB, codeA, codeB);
+      setResult(newResult);
+      const updatedHistory = [newResult, ...history].slice(0, 10);
+      setHistory(updatedHistory);
+      safeStorage.set("plag_history", updatedHistory);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
   }
 
   function downloadPDF() {
@@ -491,7 +1078,6 @@ export default function App() {
     addLine(`Logic Similarity: ${result.logic_similarity}%`);
     addLine(`Structure Similarity: ${result.structure_similarity}%`);
     addLine(`Token Overlap: ${result.token_overlap}%`);
-    addLine("");
     addLine(`Language A: ${result.language_a}`);
     addLine(`Language B: ${result.language_b}`);
     addLine("");
@@ -514,88 +1100,11 @@ export default function App() {
     URL.revokeObjectURL(url);
   }
 
-  async function handleCheck() {
-    if (!fileA || !fileB) { setError("Please upload both code files first."); return; }
-
-    setError(""); setResult(null); setLoading(true);
-
-    try {
-      const [codeA, codeB] = await Promise.all([readFile(fileA), readFile(fileB)]);
-      setCodeAContent(codeA);
-      setCodeBContent(codeB);
-      const matchingLines = getMatchingLines(codeA, codeB);
-
-      const prompt = `You are an expert code plagiarism analyst.
-
-Analyze the two code files below and return ONLY a valid JSON object. No markdown, no backticks, no extra text — pure JSON only.
-
-Also estimate:
-- human_score (0-100): likelihood code is human-written
-- ai_generated_likelihood (0-100): likelihood code is AI-generated
-
-Base this on variable naming patterns, repetition, structure rigidity, natural coding style.
-
-File A (${fileA.name}):
-${codeA.slice(0, 4000)}
-
-File B (${fileB.name}):
-${codeB.slice(0, 4000)}
-
-Return exactly this JSON structure:
-{
-  "similarity_percent": <integer 0-100>,
-  "logic_similarity": <integer 0-100>,
-  "structure_similarity": <integer 0-100>,
-  "token_overlap": <integer 0-100>,
-  "human_score": <integer 0-100>,
-  "ai_generated_likelihood": <integer 0-100>,
-  "language_a": "<string>",
-  "language_b": "<string>",
-  "summary": "<text>",
-  "findings": "<text>",
-  "ai_reason": "<short explanation>"
-}`;
-
-      const callGroq = async () => {
-        const resp = await fetch("/api/check", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model: "llama-3.3-70b-versatile",
-            temperature: 0,
-            max_tokens: 2048,
-            response_format: { type: "json_object" },
-            messages: [
-              { role: "system", content: "Return ONLY valid JSON. No text, no explanation, no markdown." },
-              { role: "user", content: prompt },
-            ],
-          }),
-        });
-        const data = await resp.json();
-        if (!resp.ok) throw new Error(data?.error?.message || `Groq API error ${resp.status}`);
-        return data.choices?.[0]?.message?.content || "";
-      };
-
-      let parsed;
-      try {
-        parsed = JSON.parse(await callGroq());
-      } catch {
-        // Retry once
-        try { parsed = JSON.parse(await callGroq()); }
-        catch { throw new Error("AI is not returning valid JSON. Please try again."); }
-      }
-
-      const newResult = { ...parsed, matchingLines, nameA: fileA.name, nameB: fileB.name, timestamp: new Date().toLocaleString() };
-      setResult(newResult);
-      const updatedHistory = [newResult, ...history].slice(0, 10);
-      setHistory(updatedHistory);
-      safeStorage.set("plag_history", updatedHistory);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  }
+  // ─── Total pairs done in batch ────────────────────────────────────────────
+  const batchDoneCount = Object.keys(batchMatrix).length;
+  const batchTotalPairs = batchFiles.length > 1
+    ? (batchFiles.length * (batchFiles.length - 1)) / 2
+    : 0;
 
   return (
     <>
@@ -614,8 +1123,6 @@ Return exactly this JSON structure:
             Detect counterfeit code and software similarities with an advanced plagiarism detection solution.
             Examine potentially copied code by highlighting similarities across multiple sources and structural patterns.
           </p>
-
-          {/* History button — now properly styled */}
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "15px" }}>
             <button className="history-btn" onClick={() => setShowHistory((p) => !p)}>
               📜 History
@@ -633,7 +1140,7 @@ Return exactly this JSON structure:
             {history.length === 0
               ? <div style={{ fontSize: "11px", color: "#777", fontFamily: "var(--mono)" }}>No history yet</div>
               : history.map((item, i) => (
-                <div key={i} className="history-item" onClick={() => { setResult(item); setShowHistory(false); }}>
+                <div key={i} className="history-item" onClick={() => { setResult(item); setMode("pair"); setShowHistory(false); }}>
                   <span style={{ color: "var(--text)" }}>{item.nameA} ↔ {item.nameB}</span>
                   <span style={{ color: getLevel(item.similarity_percent) === "high" ? "var(--danger)" : getLevel(item.similarity_percent) === "medium" ? "var(--warn)" : "var(--accent)" }}>
                     {" "}| {item.similarity_percent}%
@@ -645,195 +1152,260 @@ Return exactly this JSON structure:
           </div>
         )}
 
-        {/* UPLOAD + SWAP */}
-        <div className="upload-grid">
-          <DropZone label="File A — Original" file={fileA} onFile={setFileA} onRemove={() => setFileA(null)} />
-          <DropZone label="File B — Suspect"  file={fileB} onFile={setFileB} onRemove={() => setFileB(null)} />
+        {/* MODE TABS */}
+        <div className="mode-tabs">
+          <button className={`mode-tab${mode === "pair" ? " active" : ""}`} onClick={() => { setMode("pair"); setError(""); }}>
+            ⇄ Pair Check
+          </button>
+          <button className={`mode-tab${mode === "batch" ? " active" : ""}`} onClick={() => { setMode("batch"); setError(""); }}>
+            📊 Batch Mode — Class Checker
+          </button>
         </div>
 
-        {/* NEW: Swap files button */}
-        {fileA && fileB && (
-          <div style={{ textAlign: "center", marginBottom: "0.75rem" }}>
-            <button className="glass-btn" style={{ margin: "0 auto" }} onClick={swapFiles}>
-              ⇄ Swap Files
-            </button>
-          </div>
-        )}
-
-        <button
-          className={`check-btn${loading ? " busy" : ""}`}
-          onClick={handleCheck}
-          disabled={loading || !fileA || !fileB}
-        >
-          {loading ? <><span className="spin" />Analyzing...</> : "→ Check for Plagiarism"}
-        </button>
-
-        {error && <div className="err">⚠ {error}</div>}
-
-        {result && (
-          <div className="results">
-            <div className="section-label">Analysis results</div>
-
-            <div className="score-card">
-              <div className="score-inner">
-                <ScoreRing pct={result.similarity_percent} level={level} />
-                <div className="stat-row">
-                  <div className="stat-item">
-                    <div className="stat-label">Human-written</div>
-                    <div className="stat-value" style={{ color: "#00e5a0" }}>{humanScore}%</div>
-                  </div>
-                  <div className="divider-v" />
-                  <div className="stat-item">
-                    <div className="stat-label">AI-generated</div>
-                    <div className="stat-value" style={{ color: "#b08dff" }}>{result.ai_generated_likelihood ?? "—"}%</div>
-                  </div>
-                  <div className="divider-v" />
-                  <div className="stat-item">
-                    <div className="stat-label">Plagiarism</div>
-                    <div className="stat-value" style={{ color: "#ff4f4f" }}>{result.similarity_percent}%</div>
-                  </div>
-                </div>
-                <div className="prog-bar">
-                  <div className="prog-fill" style={{ width: `${humanScore}%` }} />
-                </div>
-                {result.ai_reason && (
-                  <div style={{ marginTop: "10px", fontSize: "11px", color: "var(--muted)", fontFamily: "var(--mono)", lineHeight: "1.6" }}>
-                    🤖 {result.ai_reason}
-                  </div>
-                )}
-              </div>
-
-              <div className="score-info">
-                <div className={`verdict-pill pill-${level}`}>{getVerdict(result.similarity_percent)}</div>
-                <div className="score-summary">{result.summary}</div>
-                <div className="lang-row">{result.language_a} → {result.language_b}</div>
-              </div>
-
-              {/* FIX: properly styled download buttons */}
-              <div className="download-row">
-                <button className="glass-btn" onClick={downloadPDF}>📄 PDF Report</button>
-                <button className="glass-btn" onClick={downloadReport}>⬇ JSON Report</button>
-              </div>
+        {/* ── PAIR MODE ── */}
+        {mode === "pair" && (
+          <>
+            <div className="upload-grid">
+              <DropZone label="File A — Original" file={fileA} onFile={setFileA} onRemove={() => setFileA(null)} />
+              <DropZone label="File B — Suspect"  file={fileB} onFile={setFileB} onRemove={() => setFileB(null)} />
             </div>
 
-            {/* METRICS */}
-            <div className="metrics">
-              {[
-                { label: "Logic similarity", val: result.logic_similarity },
-                { label: "Structure match",  val: result.structure_similarity },
-                { label: "Token overlap",    val: result.token_overlap },
-              ].map(({ label, val }) => {
-                const lv = getLevel(val);
-                return (
-                  <div className="metric" key={label}>
-                    <div className="m-lbl">{label}</div>
-                    <div className={`m-val c-${lv}`}>{Math.round(val)}%</div>
-                    <div className="m-bar">
-                      <div className={`m-fill fill-${lv}`} style={{ width: `${val}%` }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* MATCHING LINES — with copy buttons */}
-            <div className="section-label">
-              Matching lines — {result.matchingLines.length} exact match{result.matchingLines.length !== 1 ? "es" : ""} found
-            </div>
-            <div className="lines-box">
-              {result.matchingLines.length === 0
-                ? <div className="no-lines">No exact line matches detected</div>
-                : result.matchingLines.slice(0, 100).map((line, i) => (
-                  <div key={i} className="line-row" style={{ background: "rgba(255,79,79,0.12)" }}>
-                    <span className="ln">{i + 1}</span>
-                    <span className="lc" style={{ color: "#ff4f4f" }}>{line}</span>
-                    <CopyButton text={line} />
-                  </div>
-                ))
-              }
-            </div>
-
-            {/* SIMILARITY BREAKDOWN */}
-            <div className="section-label">Similarity Breakdown</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "1rem" }}>
-              {[
-                { label: "Logic",     val: result.logic_similarity },
-                { label: "Structure", val: result.structure_similarity },
-                { label: "Tokens",    val: result.token_overlap },
-                { label: "Verdict",   text: getVerdict(result.similarity_percent) },
-              ].map(({ label, val, text }) => (
-                <div className="metric" key={label}>
-                  <div className="m-lbl">{label}</div>
-                  <div className="m-val">{text ?? getLevelLabel(val)}</div>
-                </div>
-              ))}
-            </div>
-
-            {/* GITHUB-STYLE DIFF VIEW */}
-            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:"10px" }}>
-              <div className="section-label" style={{ margin:0 }}>GitHub-style diff</div>
-              <button className="glass-btn" style={{ padding:"4px 12px", fontSize:"11px" }} onClick={() => setShowDiff(p => !p)}>
-                {showDiff ? "Hide diff" : "Show diff"}
-              </button>
-            </div>
-
-            {showDiff && diff && (
-              <div className="diff-wrap">
-                <div className="diff-header">
-                  <div className="diff-file-label">📄 {fileA?.name ?? "File A"}</div>
-                  <div className="diff-file-label">📄 {fileB?.name ?? "File B"}</div>
-                </div>
-                <div className="diff-body">
-                  {/* LEFT — File A */}
-                  <div className="diff-col">
-                    {diff.diffA.map((row, i) => (
-                      <div key={i} className={`diff-line ${row.type}`}>
-                        <span className="diff-ln">{row.type !== "empty" ? i + 1 : ""}</span>
-                        <span className="diff-sign">
-                          {row.type === "removed" ? "−" : row.type === "same" ? " " : ""}
-                        </span>
-                        <span className="diff-text">{row.line}</span>
-                      </div>
-                    ))}
-                  </div>
-                  {/* RIGHT — File B */}
-                  <div className="diff-col">
-                    {diff.diffB.map((row, i) => (
-                      <div key={i} className={`diff-line ${row.type}`}>
-                        <span className="diff-ln">{row.type !== "empty" ? i + 1 : ""}</span>
-                        <span className="diff-sign">
-                          {row.type === "added" ? "+" : row.type === "same" ? " " : ""}
-                        </span>
-                        <span className="diff-text">{row.line}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="diff-legend">
-                  <div className="diff-legend-item">
-                    <div className="diff-legend-dot" style={{ background:"rgba(255,79,79,0.5)" }} />
-                    Only in File A (original)
-                  </div>
-                  <div className="diff-legend-item">
-                    <div className="diff-legend-dot" style={{ background:"rgba(0,229,160,0.5)" }} />
-                    Only in File B (suspect)
-                  </div>
-                  <div className="diff-legend-item">
-                    <div className="diff-legend-dot" style={{ background:"rgba(255,255,255,0.15)" }} />
-                    Identical in both — possible plagiarism
-                  </div>
-                </div>
-                {(codeAContent.split("\n").length > 300 || codeBContent.split("\n").length > 300) && (
-                  <div className="diff-note">⚠ Files truncated to 300 lines for performance</div>
-                )}
+            {fileA && fileB && (
+              <div style={{ textAlign: "center", marginBottom: "0.75rem" }}>
+                <button className="glass-btn" style={{ margin: "0 auto" }} onClick={swapFiles}>
+                  ⇄ Swap Files
+                </button>
               </div>
             )}
 
-            <div className="section-label">Detailed findings</div>
-            <div className="findings">{result.findings}</div>
-          </div>
+            <button
+              className={`check-btn${loading ? " busy" : ""}`}
+              onClick={handleCheck}
+              disabled={loading || !fileA || !fileB}
+            >
+              {loading ? <><span className="spin" />Analyzing...</> : "→ Check for Plagiarism"}
+            </button>
+
+            {error && <div className="err">⚠ {error}</div>}
+
+            {result && (
+              <div className="results">
+                <div className="section-label">Analysis results</div>
+                <div className="score-card">
+                  <div className="score-inner">
+                    <ScoreRing pct={result.similarity_percent} level={level} />
+                    <div className="stat-row">
+                      <div className="stat-item">
+                        <div className="stat-label">Human-written</div>
+                        <div className="stat-value" style={{ color: "#00e5a0" }}>{humanScore}%</div>
+                      </div>
+                      <div className="divider-v" />
+                      <div className="stat-item">
+                        <div className="stat-label">AI-generated</div>
+                        <div className="stat-value" style={{ color: "#b08dff" }}>{result.ai_generated_likelihood ?? "—"}%</div>
+                      </div>
+                      <div className="divider-v" />
+                      <div className="stat-item">
+                        <div className="stat-label">Plagiarism</div>
+                        <div className="stat-value" style={{ color: "#ff4f4f" }}>{result.similarity_percent}%</div>
+                      </div>
+                    </div>
+                    <div className="prog-bar">
+                      <div className="prog-fill" style={{ width: `${humanScore}%` }} />
+                    </div>
+                    {result.ai_reason && (
+                      <div style={{ marginTop: "10px", fontSize: "11px", color: "var(--muted)", fontFamily: "var(--mono)", lineHeight: "1.6" }}>
+                        🤖 {result.ai_reason}
+                      </div>
+                    )}
+                  </div>
+                  <div className="score-info">
+                    <div className={`verdict-pill pill-${level}`}>{getVerdict(result.similarity_percent)}</div>
+                    <div className="score-summary">{result.summary}</div>
+                    <div className="lang-row">{result.language_a} → {result.language_b}</div>
+                  </div>
+                  <div className="download-row">
+                    <button className="glass-btn" onClick={downloadPDF}>📄 PDF Report</button>
+                    <button className="glass-btn" onClick={downloadReport}>⬇ JSON Report</button>
+                  </div>
+                </div>
+
+                <div className="metrics">
+                  {[
+                    { label: "Logic similarity", val: result.logic_similarity },
+                    { label: "Structure match",  val: result.structure_similarity },
+                    { label: "Token overlap",    val: result.token_overlap },
+                  ].map(({ label, val }) => {
+                    const lv = getLevel(val);
+                    return (
+                      <div className="metric" key={label}>
+                        <div className="m-lbl">{label}</div>
+                        <div className={`m-val c-${lv}`}>{Math.round(val)}%</div>
+                        <div className="m-bar">
+                          <div className={`m-fill fill-${lv}`} style={{ width: `${val}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="section-label">
+                  Matching lines — {result.matchingLines.length} exact match{result.matchingLines.length !== 1 ? "es" : ""} found
+                </div>
+                <div className="lines-box">
+                  {result.matchingLines.length === 0
+                    ? <div className="no-lines">No exact line matches detected</div>
+                    : result.matchingLines.slice(0, 100).map((line, i) => (
+                      <div key={i} className="line-row" style={{ background: "rgba(255,79,79,0.12)" }}>
+                        <span className="ln">{i + 1}</span>
+                        <span className="lc" style={{ color: "#ff4f4f" }}>{line}</span>
+                        <CopyButton text={line} />
+                      </div>
+                    ))
+                  }
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
+                  <div className="section-label" style={{ margin: 0 }}>GitHub-style diff</div>
+                  <button className="glass-btn" style={{ padding: "4px 12px", fontSize: "11px" }} onClick={() => {}}>
+                    {/* controlled by ResultDetail inline */}
+                  </button>
+                </div>
+
+                {/* Inline diff for pair mode */}
+                {codeAContent && codeBContent && (() => {
+                  const diff = computeDiff(codeAContent.split("\n"), codeBContent.split("\n"));
+                  return (
+                    <div className="diff-wrap">
+                      <div className="diff-header">
+                        <div className="diff-file-label">📄 {fileA?.name}</div>
+                        <div className="diff-file-label">📄 {fileB?.name}</div>
+                      </div>
+                      <div className="diff-body">
+                        <div className="diff-col">
+                          {diff.diffA.map((row, i) => (
+                            <div key={i} className={`diff-line ${row.type}`}>
+                              <span className="diff-ln">{row.type !== "empty" ? i + 1 : ""}</span>
+                              <span className="diff-sign">{row.type === "removed" ? "−" : row.type === "same" ? " " : ""}</span>
+                              <span className="diff-text">{row.line}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="diff-col">
+                          {diff.diffB.map((row, i) => (
+                            <div key={i} className={`diff-line ${row.type}`}>
+                              <span className="diff-ln">{row.type !== "empty" ? i + 1 : ""}</span>
+                              <span className="diff-sign">{row.type === "added" ? "+" : row.type === "same" ? " " : ""}</span>
+                              <span className="diff-text">{row.line}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="diff-legend">
+                        <div className="diff-legend-item"><div className="diff-legend-dot" style={{ background: "rgba(255,79,79,0.5)" }} />Only in File A (original)</div>
+                        <div className="diff-legend-item"><div className="diff-legend-dot" style={{ background: "rgba(0,229,160,0.5)" }} />Only in File B (suspect)</div>
+                        <div className="diff-legend-item"><div className="diff-legend-dot" style={{ background: "rgba(255,255,255,0.15)" }} />Identical — possible plagiarism</div>
+                      </div>
+                      {(codeAContent.split("\n").length > 300 || codeBContent.split("\n").length > 300) && (
+                        <div className="diff-note">⚠ Files truncated to 300 lines for performance</div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                <div className="section-label">Detailed findings</div>
+                <div className="findings">{result.findings}</div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ── BATCH MODE ── */}
+        {mode === "batch" && (
+          <>
+            <BatchDropZone
+              files={batchFiles}
+              onFiles={addBatchFiles}
+              onRemoveFile={removeBatchFile}
+            />
+
+            {batchFiles.length > 0 && batchFiles.length < 3 && (
+              <div className="err" style={{ marginBottom: "1rem" }}>
+                ⚠ Add at least {3 - batchFiles.length} more file{3 - batchFiles.length > 1 ? "s" : ""} to run batch analysis.
+              </div>
+            )}
+
+            {batchFiles.length >= 3 && (
+              <div style={{ fontFamily: "var(--mono)", fontSize: "12px", color: "var(--muted)", marginBottom: "1rem", padding: "10px 14px", background: "var(--surface)", borderRadius: "8px", border: "1px solid var(--border)" }}>
+                📊 {batchFiles.length} files → {batchTotalPairs} pair{batchTotalPairs !== 1 ? "s" : ""} to compare
+                <span style={{ color: "var(--accent)", marginLeft: "12px" }}>Cmd+Enter to run</span>
+              </div>
+            )}
+
+            <button
+              className={`check-btn${batchRunning ? " busy" : ""}`}
+              onClick={handleBatchCheck}
+              disabled={batchRunning || batchFiles.length < 3}
+            >
+              {batchRunning
+                ? <><span className="spin" />Analyzing {batchProgress.done}/{batchProgress.total} pairs...</>
+                : `→ Run Batch Analysis (${batchTotalPairs} pairs)`}
+            </button>
+
+            {/* Progress bar while running */}
+            {batchRunning && batchProgress.total > 0 && (
+              <div className="batch-progress" style={{ marginTop: "-1rem", marginBottom: "1.5rem" }}>
+                <div className="batch-status">
+                  <span>Comparing pairs...</span>
+                  <span style={{ color: "var(--accent)" }}>{batchProgress.done} / {batchProgress.total}</span>
+                </div>
+                <div className="batch-progress-bar">
+                  <div className="batch-progress-fill" style={{ width: `${(batchProgress.done / batchProgress.total) * 100}%` }} />
+                </div>
+              </div>
+            )}
+
+            {error && <div className="err">⚠ {error}</div>}
+
+            {/* Matrix — show once any results are in */}
+            {(Object.keys(batchMatrix).length > 0 || batchLoadingCells.size > 0) && (
+              <>
+                <div className="section-label">
+                  Similarity matrix — {batchDoneCount}/{batchTotalPairs} pairs analyzed
+                  {batchDoneCount === batchTotalPairs && !batchRunning && (
+                    <span style={{ color: "var(--accent)", marginLeft: "10px" }}>✓ Complete</span>
+                  )}
+                </div>
+                <BatchMatrix
+                  files={batchFiles}
+                  matrix={batchMatrix}
+                  loadingCells={batchLoadingCells}
+                  onCellClick={openModal}
+                />
+              </>
+            )}
+          </>
         )}
       </div>
+
+      {/* ── MODAL: Batch cell drill-down ── */}
+      {modalData && (
+        <div className="modal-overlay" onClick={closeModal}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <button className="modal-close" onClick={closeModal}>✕ Close</button>
+            <div className="modal-title">
+              📄 {batchFiles[modalData.iA]?.name} ↔ 📄 {batchFiles[modalData.iB]?.name}
+            </div>
+            <ResultDetail
+              result={modalData.result}
+              fileAName={batchFiles[modalData.iA]?.name}
+              fileBName={batchFiles[modalData.iB]?.name}
+              codeAContent={batchContents[batchFiles[modalData.iA]?.name] || ""}
+              codeBContent={batchContents[batchFiles[modalData.iB]?.name] || ""}
+            />
+          </div>
+        </div>
+      )}
     </>
   );
 }
