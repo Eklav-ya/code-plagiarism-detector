@@ -812,15 +812,15 @@ Return exactly this JSON structure:
                 <div className="diff-legend">
                   <div className="diff-legend-item">
                     <div className="diff-legend-dot" style={{ background:"rgba(255,79,79,0.5)" }} />
-                    Removed / only in File A
+                    Only in File A (original)
                   </div>
                   <div className="diff-legend-item">
                     <div className="diff-legend-dot" style={{ background:"rgba(0,229,160,0.5)" }} />
-                    Added / only in File B
+                    Only in File B (suspect)
                   </div>
                   <div className="diff-legend-item">
-                    <div className="diff-legend-dot" style={{ background:"rgba(255,255,255,0.1)" }} />
-                    Identical lines
+                    <div className="diff-legend-dot" style={{ background:"rgba(255,255,255,0.15)" }} />
+                    Identical in both — possible plagiarism
                   </div>
                 </div>
                 {(codeAContent.split("\n").length > 300 || codeBContent.split("\n").length > 300) && (
