@@ -265,7 +265,7 @@ const CSS = `
   .diff-col { overflow-x:auto; min-width:0; }
   .diff-col:first-child { border-right:1px solid var(--border2); }
   .diff-line { display:flex; align-items:flex-start; gap:8px; padding:2px 10px; font-family:var(--mono); font-size:12px; min-height:22px; white-space:pre-wrap; word-break:break-all; }
-  .diff-line.same    { background:transparent; color:var(--text); }
+  .diff-line.same    { background:rgba(255,255,255,0.03); color:#c8c8d8; border-left:3px solid rgba(255,255,255,0.08); }
   .diff-line.removed { background:rgba(255,79,79,0.12); color:#ff8a8a; border-left:3px solid #ff4f4f; }
   .diff-line.added   { background:rgba(0,229,160,0.1);  color:#00e5a0; border-left:3px solid #00e5a0; }
   .diff-line.empty   { background:rgba(255,255,255,0.02); min-height:22px; border-left:3px solid transparent; }
