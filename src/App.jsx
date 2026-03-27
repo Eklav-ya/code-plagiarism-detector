@@ -31,7 +31,6 @@ function getVerdict(pct) {
 
 // ─── Language Detection ───────────────────────────────────────────────────────
 const LANG_MAP = {
-  // By extension
   js:   { label: "JavaScript", emoji: "🟨" },
   jsx:  { label: "React/JSX",  emoji: "⚛️"  },
   ts:   { label: "TypeScript", emoji: "🔷" },
@@ -367,6 +366,13 @@ const CSS = `
 
   .err { background:rgba(255,79,79,0.1); border:1px solid rgba(255,79,79,0.3); border-radius:8px; padding:10px 14px; font-family:var(--mono); font-size:12px; color:var(--danger); margin-bottom:1.25rem; line-height:1.6; }
 
+  /* HISTORY NOTICE */
+  .history-notice {
+    background:rgba(0,229,160,0.06); border:1px solid rgba(0,229,160,0.2);
+    border-radius:8px; padding:10px 14px; font-family:var(--mono); font-size:11px;
+    color:var(--accent); margin-bottom:1.25rem; display:flex; align-items:center; gap:8px;
+  }
+
   /* RESULTS */
   .results { animation:fadeUp 0.4s ease both; }
   .section-label { font-family:var(--mono); font-size:10px; letter-spacing:2px; color:var(--muted); text-transform:uppercase; margin-bottom:10px; }
@@ -641,23 +647,76 @@ function CopyButton({ text }) {
   );
 }
 
-// ─── ResultDetail (used in modal + main view) ─────────────────────────────────
-function ResultDetail({ result, fileAName, fileBName, codeAContent, codeBContent }) {
+// ─── InlineDiff — used in pair mode and modal ─────────────────────────────────
+function InlineDiff({ codeAContent, codeBContent, fileAName, fileBName }) {
+  // FIX 2: showDiff state lives here with a working toggle
   const [showDiff, setShowDiff] = useState(true);
-  const humanScore = result?.human_score ?? (result ? 100 - result.similarity_percent : 0);
-  const level = getLevel(result.similarity_percent);
 
   const diff = useMemo(() => {
     if (!codeAContent || !codeBContent) return null;
     return computeDiff(codeAContent.split("\n"), codeBContent.split("\n"));
   }, [codeAContent, codeBContent]);
 
-  function getLevelLabel(v) {
-    if (v >= 70) return "HIGH";
-    if (v >= 40) return "MEDIUM";
-    if (v >= 15) return "LOW";
-    return "NONE";
-  }
+  if (!diff) return null;
+
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
+        <div className="section-label" style={{ margin: 0 }}>GitHub-style diff</div>
+        {/* FIX 2: Button now has correct label and working onClick */}
+        <button
+          className="glass-btn"
+          style={{ padding: "6px 14px", fontSize: "11px" }}
+          onClick={() => setShowDiff(p => !p)}
+        >
+          {showDiff ? "⊟ Hide diff" : "⊞ Show diff"}
+        </button>
+      </div>
+
+      {showDiff && (
+        <div className="diff-wrap">
+          <div className="diff-header">
+            <div className="diff-file-label">📄 {fileAName}</div>
+            <div className="diff-file-label">📄 {fileBName}</div>
+          </div>
+          <div className="diff-body">
+            <div className="diff-col">
+              {diff.diffA.map((row, i) => (
+                <div key={i} className={`diff-line ${row.type}`}>
+                  <span className="diff-ln">{row.type !== "empty" ? i + 1 : ""}</span>
+                  <span className="diff-sign">{row.type === "removed" ? "−" : row.type === "same" ? " " : ""}</span>
+                  <span className="diff-text">{row.line}</span>
+                </div>
+              ))}
+            </div>
+            <div className="diff-col">
+              {diff.diffB.map((row, i) => (
+                <div key={i} className={`diff-line ${row.type}`}>
+                  <span className="diff-ln">{row.type !== "empty" ? i + 1 : ""}</span>
+                  <span className="diff-sign">{row.type === "added" ? "+" : row.type === "same" ? " " : ""}</span>
+                  <span className="diff-text">{row.line}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="diff-legend">
+            <div className="diff-legend-item"><div className="diff-legend-dot" style={{ background: "rgba(255,79,79,0.5)" }} />Only in File A (original)</div>
+            <div className="diff-legend-item"><div className="diff-legend-dot" style={{ background: "rgba(0,229,160,0.5)" }} />Only in File B (suspect)</div>
+            <div className="diff-legend-item"><div className="diff-legend-dot" style={{ background: "rgba(255,255,255,0.15)" }} />Identical — possible plagiarism</div>
+          </div>
+          {(codeAContent.split("\n").length > 300 || codeBContent.split("\n").length > 300) && (
+            <div className="diff-note">⚠ Files truncated to 300 lines for performance</div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+// ─── ResultDetail (used in modal for batch) ───────────────────────────────────
+function ResultDetail({ result, fileAName, fileBName, codeAContent, codeBContent }) {
+  const humanScore = result?.human_score ?? (result ? 100 - result.similarity_percent : 0);
+  const level = getLevel(result.similarity_percent);
 
   return (
     <>
@@ -731,46 +790,13 @@ function ResultDetail({ result, fileAName, fileBName, codeAContent, codeBContent
         }
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
-        <div className="section-label" style={{ margin: 0 }}>GitHub-style diff</div>
-        <button className="glass-btn" style={{ padding: "4px 12px", fontSize: "11px" }} onClick={() => setShowDiff(p => !p)}>
-          {showDiff ? "Hide diff" : "Show diff"}
-        </button>
-      </div>
-
-      {showDiff && diff && (
-        <div className="diff-wrap">
-          <div className="diff-header">
-            <div className="diff-file-label">📄 {fileAName}</div>
-            <div className="diff-file-label">📄 {fileBName}</div>
-          </div>
-          <div className="diff-body">
-            <div className="diff-col">
-              {diff.diffA.map((row, i) => (
-                <div key={i} className={`diff-line ${row.type}`}>
-                  <span className="diff-ln">{row.type !== "empty" ? i + 1 : ""}</span>
-                  <span className="diff-sign">{row.type === "removed" ? "−" : row.type === "same" ? " " : ""}</span>
-                  <span className="diff-text">{row.line}</span>
-                </div>
-              ))}
-            </div>
-            <div className="diff-col">
-              {diff.diffB.map((row, i) => (
-                <div key={i} className={`diff-line ${row.type}`}>
-                  <span className="diff-ln">{row.type !== "empty" ? i + 1 : ""}</span>
-                  <span className="diff-sign">{row.type === "added" ? "+" : row.type === "same" ? " " : ""}</span>
-                  <span className="diff-text">{row.line}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="diff-legend">
-            <div className="diff-legend-item"><div className="diff-legend-dot" style={{ background: "rgba(255,79,79,0.5)" }} />Only in File A</div>
-            <div className="diff-legend-item"><div className="diff-legend-dot" style={{ background: "rgba(0,229,160,0.5)" }} />Only in File B</div>
-            <div className="diff-legend-item"><div className="diff-legend-dot" style={{ background: "rgba(255,255,255,0.15)" }} />Identical — possible plagiarism</div>
-          </div>
-        </div>
-      )}
+      {/* FIX 2: Use the new InlineDiff component with its own working toggle */}
+      <InlineDiff
+        codeAContent={codeAContent}
+        codeBContent={codeBContent}
+        fileAName={fileAName}
+        fileBName={fileBName}
+      />
 
       <div className="section-label">Detailed findings</div>
       <div className="findings">{result.findings}</div>
@@ -883,7 +909,7 @@ function BatchMatrix({ files, matrix, loadingCells, onCellClick }) {
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [mode, setMode] = useState("pair"); // "pair" | "batch"
+  const [mode, setMode] = useState("pair");
 
   // Pair mode state
   const [fileA, setFileA] = useState(null);
@@ -893,6 +919,8 @@ export default function App() {
   const [result, setResult] = useState(null);
   const [codeAContent, setCodeAContent] = useState("");
   const [codeBContent, setCodeBContent] = useState("");
+  // FIX 1: track whether result came from history (no live code content)
+  const [isFromHistory, setIsFromHistory] = useState(false);
 
   // Batch mode state
   const [batchFiles, setBatchFiles] = useState([]);
@@ -903,7 +931,7 @@ export default function App() {
   const [batchContents, setBatchContents] = useState({});
 
   // Modal for batch cell drill-down
-  const [modalData, setModalData] = useState(null); // { result, iA, iB }
+  const [modalData, setModalData] = useState(null);
 
   // Shared state
   const [history, setHistory] = useState([]);
@@ -912,7 +940,6 @@ export default function App() {
   const [fade, setFade] = useState(true);
 
   const historyRef = useRef(null);
-  const scrollSyncActive = useRef(false);
 
   const humanScore = result?.human_score ?? (result ? 100 - result.similarity_percent : 0);
   const level = result ? getLevel(result.similarity_percent) : "none";
@@ -939,7 +966,6 @@ export default function App() {
     return () => document.removeEventListener("mousedown", handler);
   }, [showHistory]);
 
-  // Keyboard shortcut: Cmd/Ctrl+Enter to analyze
   useEffect(() => {
     const handler = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
@@ -963,14 +989,12 @@ export default function App() {
     setCodeBContent(codeAContent);
   }
 
-  // ─── Batch file management ────────────────────────────────────────────────
   function addBatchFiles(newFiles) {
     setBatchFiles((prev) => {
       const existingNames = new Set(prev.map(f => f.name));
       const unique = newFiles.filter(f => !existingNames.has(f.name));
       return [...prev, ...unique];
     });
-    // Reset matrix when files change
     setBatchMatrix({});
     setBatchProgress({ done: 0, total: 0 });
   }
@@ -981,21 +1005,18 @@ export default function App() {
     setBatchProgress({ done: 0, total: 0 });
   }
 
-  // ─── Batch analysis ───────────────────────────────────────────────────────
   async function handleBatchCheck() {
     if (batchFiles.length < 3) { setError("Please upload at least 3 files for batch mode."); return; }
     setError("");
     setBatchRunning(true);
     setBatchMatrix({});
 
-    // Read all file contents first
     const contents = {};
     for (const f of batchFiles) {
       contents[f.name] = await readFile(f);
     }
     setBatchContents(contents);
 
-    // Build pair list (upper triangle only, mirror below)
     const pairs = [];
     for (let i = 0; i < batchFiles.length; i++)
       for (let j = i + 1; j < batchFiles.length; j++)
@@ -1004,7 +1025,6 @@ export default function App() {
     setBatchProgress({ done: 0, total: pairs.length });
     setBatchLoadingCells(new Set(pairs.map(([i, j]) => `${i}-${j}`)));
 
-    // Run pairs with concurrency limit of 3 to avoid rate limiting
     const CONCURRENCY = 3;
     let idx = 0;
 
@@ -1032,16 +1052,15 @@ export default function App() {
     setBatchRunning(false);
   }
 
-  // ─── Modal open/close ─────────────────────────────────────────────────────
   function openModal(iA, iB, res) {
     setModalData({ result: res, iA, iB });
   }
   function closeModal() { setModalData(null); }
 
-  // ─── Pair mode analysis ───────────────────────────────────────────────────
   async function handleCheck() {
     if (!fileA || !fileB) { setError("Please upload both code files first."); return; }
     setError(""); setResult(null); setLoading(true);
+    setIsFromHistory(false);
     try {
       const [codeA, codeB] = await Promise.all([readFile(fileA), readFile(fileB)]);
       setCodeAContent(codeA);
@@ -1100,7 +1119,6 @@ export default function App() {
     URL.revokeObjectURL(url);
   }
 
-  // ─── Total pairs done in batch ────────────────────────────────────────────
   const batchDoneCount = Object.keys(batchMatrix).length;
   const batchTotalPairs = batchFiles.length > 1
     ? (batchFiles.length * (batchFiles.length - 1)) / 2
@@ -1125,7 +1143,7 @@ export default function App() {
           </p>
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "15px" }}>
             <button className="history-btn" onClick={() => setShowHistory((p) => !p)}>
-              📜 History
+              📜 History ({history.length})
             </button>
           </div>
         </div>
@@ -1140,9 +1158,25 @@ export default function App() {
             {history.length === 0
               ? <div style={{ fontSize: "11px", color: "#777", fontFamily: "var(--mono)" }}>No history yet</div>
               : history.map((item, i) => (
-                <div key={i} className="history-item" onClick={() => { setResult(item); setMode("pair"); setShowHistory(false); }}>
+                <div
+                  key={i}
+                  className="history-item"
+                  onClick={() => {
+                    // FIX 1: Restore result from history; mark as history so diff shows a notice
+                    setResult(item);
+                    setMode("pair");
+                    setShowHistory(false);
+                    setIsFromHistory(true);
+                    // Clear live code content — history items don't carry raw code
+                    setCodeAContent(item.codeA || "");
+                    setCodeBContent(item.codeB || "");
+                  }}
+                >
                   <span style={{ color: "var(--text)" }}>{item.nameA} ↔ {item.nameB}</span>
-                  <span style={{ color: getLevel(item.similarity_percent) === "high" ? "var(--danger)" : getLevel(item.similarity_percent) === "medium" ? "var(--warn)" : "var(--accent)" }}>
+                  <span style={{
+                    color: getLevel(item.similarity_percent) === "high" ? "var(--danger)"
+                      : getLevel(item.similarity_percent) === "medium" ? "var(--warn)" : "var(--accent)"
+                  }}>
                     {" "}| {item.similarity_percent}%
                   </span>
                   <div style={{ color: "#666", marginTop: "2px" }}>{item.timestamp}</div>
@@ -1166,8 +1200,8 @@ export default function App() {
         {mode === "pair" && (
           <>
             <div className="upload-grid">
-              <DropZone label="File A — Original" file={fileA} onFile={setFileA} onRemove={() => setFileA(null)} />
-              <DropZone label="File B — Suspect"  file={fileB} onFile={setFileB} onRemove={() => setFileB(null)} />
+              <DropZone label="File A — Original" file={fileA} onFile={(f) => { setFileA(f); setIsFromHistory(false); }} onRemove={() => setFileA(null)} />
+              <DropZone label="File B — Suspect"  file={fileB} onFile={(f) => { setFileB(f); setIsFromHistory(false); }} onRemove={() => setFileB(null)} />
             </div>
 
             {fileA && fileB && (
@@ -1191,6 +1225,14 @@ export default function App() {
             {result && (
               <div className="results">
                 <div className="section-label">Analysis results</div>
+
+                {/* FIX 1: Show notice when viewing from history */}
+                {isFromHistory && (
+                  <div className="history-notice">
+                    📜 Viewing from history — upload the original files and re-run to see the code diff
+                  </div>
+                )}
+
                 <div className="score-card">
                   <div className="score-inner">
                     <ScoreRing pct={result.similarity_percent} level={level} />
@@ -1265,53 +1307,15 @@ export default function App() {
                   }
                 </div>
 
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
-                  <div className="section-label" style={{ margin: 0 }}>GitHub-style diff</div>
-                  <button className="glass-btn" style={{ padding: "4px 12px", fontSize: "11px" }} onClick={() => {}}>
-                    {/* controlled by ResultDetail inline */}
-                  </button>
-                </div>
-
-                {/* Inline diff for pair mode */}
-                {codeAContent && codeBContent && (() => {
-                  const diff = computeDiff(codeAContent.split("\n"), codeBContent.split("\n"));
-                  return (
-                    <div className="diff-wrap">
-                      <div className="diff-header">
-                        <div className="diff-file-label">📄 {fileA?.name}</div>
-                        <div className="diff-file-label">📄 {fileB?.name}</div>
-                      </div>
-                      <div className="diff-body">
-                        <div className="diff-col">
-                          {diff.diffA.map((row, i) => (
-                            <div key={i} className={`diff-line ${row.type}`}>
-                              <span className="diff-ln">{row.type !== "empty" ? i + 1 : ""}</span>
-                              <span className="diff-sign">{row.type === "removed" ? "−" : row.type === "same" ? " " : ""}</span>
-                              <span className="diff-text">{row.line}</span>
-                            </div>
-                          ))}
-                        </div>
-                        <div className="diff-col">
-                          {diff.diffB.map((row, i) => (
-                            <div key={i} className={`diff-line ${row.type}`}>
-                              <span className="diff-ln">{row.type !== "empty" ? i + 1 : ""}</span>
-                              <span className="diff-sign">{row.type === "added" ? "+" : row.type === "same" ? " " : ""}</span>
-                              <span className="diff-text">{row.line}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="diff-legend">
-                        <div className="diff-legend-item"><div className="diff-legend-dot" style={{ background: "rgba(255,79,79,0.5)" }} />Only in File A (original)</div>
-                        <div className="diff-legend-item"><div className="diff-legend-dot" style={{ background: "rgba(0,229,160,0.5)" }} />Only in File B (suspect)</div>
-                        <div className="diff-legend-item"><div className="diff-legend-dot" style={{ background: "rgba(255,255,255,0.15)" }} />Identical — possible plagiarism</div>
-                      </div>
-                      {(codeAContent.split("\n").length > 300 || codeBContent.split("\n").length > 300) && (
-                        <div className="diff-note">⚠ Files truncated to 300 lines for performance</div>
-                      )}
-                    </div>
-                  );
-                })()}
+                {/* FIX 2: Use InlineDiff component — only renders when content is available */}
+                {codeAContent && codeBContent && (
+                  <InlineDiff
+                    codeAContent={codeAContent}
+                    codeBContent={codeBContent}
+                    fileAName={result.nameA}
+                    fileBName={result.nameB}
+                  />
+                )}
 
                 <div className="section-label">Detailed findings</div>
                 <div className="findings">{result.findings}</div>
@@ -1352,7 +1356,6 @@ export default function App() {
                 : `→ Run Batch Analysis (${batchTotalPairs} pairs)`}
             </button>
 
-            {/* Progress bar while running */}
             {batchRunning && batchProgress.total > 0 && (
               <div className="batch-progress" style={{ marginTop: "-1rem", marginBottom: "1.5rem" }}>
                 <div className="batch-status">
@@ -1367,7 +1370,6 @@ export default function App() {
 
             {error && <div className="err">⚠ {error}</div>}
 
-            {/* Matrix — show once any results are in */}
             {(Object.keys(batchMatrix).length > 0 || batchLoadingCells.size > 0) && (
               <>
                 <div className="section-label">
