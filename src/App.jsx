@@ -1081,40 +1081,130 @@ export default function App() {
     if (!result) return;
     const doc = new jsPDF();
     let y = 10;
-    doc.setFont("Courier", "Normal");
-    doc.setFontSize(10);
-    const addLine = (text) => {
+
+    const addLine = (text, opts = {}) => {
+      doc.setFont("Courier", opts.bold ? "Bold" : "Normal");
+      doc.setFontSize(opts.size || 10);
       const lines = doc.splitTextToSize(text, 180);
       lines.forEach((line) => {
         if (y > 280) { doc.addPage(); y = 10; }
-        doc.text(line, 10, y);
-        y += 6;
+        doc.text(line, opts.x || 10, y);
+        y += opts.gap || 6;
       });
+      doc.setFont("Courier", "Normal");
+      doc.setFontSize(10);
     };
-    addLine("Code Plagiarism Report");
-    addLine("----------------------------");
-    addLine(`Similarity: ${result.similarity_percent}%`);
-    addLine(`Logic Similarity: ${result.logic_similarity}%`);
-    addLine(`Structure Similarity: ${result.structure_similarity}%`);
-    addLine(`Token Overlap: ${result.token_overlap}%`);
-    addLine(`Language A: ${result.language_a}`);
-    addLine(`Language B: ${result.language_b}`);
-    addLine("");
-    addLine("Summary:");
-    addLine(result.summary);
-    addLine("");
-    addLine("Findings:");
-    addLine(result.findings);
-    doc.save("plagiarism-report.pdf");
+
+    const addSpacer = (h = 4) => { y += h; };
+    const addDivider = () => {
+      doc.setDrawColor(180, 180, 180);
+      doc.line(10, y, 200, y);
+      y += 5;
+    };
+
+    // ── Title block ──
+    addLine("CODE PLAGIARISM DETECTION REPORT", { bold: true, size: 14, gap: 8 });
+    addLine(`Generated: ${new Date().toLocaleString()}`, { size: 9, gap: 5 });
+    addDivider();
+
+    // ── Comparison subject ──
+    addLine("COMPARISON SUBJECT", { bold: true, size: 10, gap: 7 });
+    addLine(`Comparison result for "${result.nameA}" and "${result.nameB}" are as follows:`, { size: 10, gap: 7 });
+    addLine(`File A (Original) : ${result.nameA}`, { size: 10, gap: 6 });
+    addLine(`File B (Suspect)  : ${result.nameB}`, { size: 10, gap: 6 });
+    addLine(`Language A        : ${result.language_a}`, { size: 10, gap: 6 });
+    addLine(`Language B        : ${result.language_b}`, { size: 10, gap: 6 });
+    addSpacer(2);
+    addDivider();
+
+    // ── Verdict ──
+    addLine("VERDICT", { bold: true, size: 10, gap: 7 });
+    addLine(`Overall Verdict   : ${getVerdict(result.similarity_percent)}`, { bold: true, size: 11, gap: 7 });
+    addSpacer(2);
+    addDivider();
+
+    // ── Scores ──
+    addLine("SIMILARITY SCORES", { bold: true, size: 10, gap: 7 });
+    addLine(`Overall Similarity    : ${result.similarity_percent}%`, { size: 10, gap: 6 });
+    addLine(`Logic Similarity      : ${result.logic_similarity}%`, { size: 10, gap: 6 });
+    addLine(`Structure Similarity  : ${result.structure_similarity}%`, { size: 10, gap: 6 });
+    addLine(`Token Overlap         : ${result.token_overlap}%`, { size: 10, gap: 6 });
+    addLine(`Human-Written Score   : ${result.human_score ?? (100 - result.similarity_percent)}%`, { size: 10, gap: 6 });
+    addLine(`AI-Generated Likelihood: ${result.ai_generated_likelihood ?? "N/A"}%`, { size: 10, gap: 6 });
+    addSpacer(2);
+    addDivider();
+
+    // ── AI reasoning ──
+    if (result.ai_reason) {
+      addLine("AI DETECTION NOTE", { bold: true, size: 10, gap: 7 });
+      addLine(result.ai_reason, { size: 10, gap: 6 });
+      addSpacer(2);
+      addDivider();
+    }
+
+    // ── Summary ──
+    addLine("SUMMARY", { bold: true, size: 10, gap: 7 });
+    addLine(result.summary, { size: 10, gap: 6 });
+    addSpacer(2);
+    addDivider();
+
+    // ── Matching lines ──
+    if (result.matchingLines?.length) {
+      addLine(`MATCHING LINES (${result.matchingLines.length} exact matches found)`, { bold: true, size: 10, gap: 7 });
+      result.matchingLines.slice(0, 30).forEach((line, i) => {
+        addLine(`  ${i + 1}. ${line}`, { size: 9, gap: 5 });
+      });
+      if (result.matchingLines.length > 30) {
+        addLine(`  ... and ${result.matchingLines.length - 30} more matches (truncated)`, { size: 9, gap: 5 });
+      }
+      addSpacer(2);
+      addDivider();
+    }
+
+    // ── Findings ──
+    addLine("DETAILED FINDINGS", { bold: true, size: 10, gap: 7 });
+    addLine(result.findings, { size: 10, gap: 6 });
+
+    const safeNameA = result.nameA.replace(/\.[^.]+$/, "");
+    const safeNameB = result.nameB.replace(/\.[^.]+$/, "");
+    doc.save(`plagiarism-${safeNameA}-vs-${safeNameB}.pdf`);
   }
 
   function downloadReport() {
     if (!result) return;
-    const blob = new Blob([JSON.stringify(result, null, 2)], { type: "application/json" });
+    const report = {
+      report_title: "Code Plagiarism Detection Report",
+      generated_at: new Date().toLocaleString(),
+      comparison: {
+        description: `Comparison result for "${result.nameA}" and "${result.nameB}" are as follows:`,
+        file_a: { name: result.nameA, role: "Original", language: result.language_a },
+        file_b: { name: result.nameB, role: "Suspect",  language: result.language_b },
+      },
+      verdict: getVerdict(result.similarity_percent),
+      scores: {
+        overall_similarity_percent:    result.similarity_percent,
+        logic_similarity_percent:      result.logic_similarity,
+        structure_similarity_percent:  result.structure_similarity,
+        token_overlap_percent:         result.token_overlap,
+        human_written_percent:         result.human_score ?? (100 - result.similarity_percent),
+        ai_generated_likelihood_percent: result.ai_generated_likelihood ?? null,
+      },
+      ai_detection_note: result.ai_reason || null,
+      summary: result.summary,
+      findings: result.findings,
+      matching_lines: {
+        count: result.matchingLines?.length ?? 0,
+        lines: result.matchingLines ?? [],
+      },
+      timestamp: result.timestamp,
+    };
+    const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "plagiarism-report.json";
+    const safeNameA = result.nameA.replace(/\.[^.]+$/, "");
+    const safeNameB = result.nameB.replace(/\.[^.]+$/, "");
+    a.download = `plagiarism-${safeNameA}-vs-${safeNameB}.json`;
     a.click();
     URL.revokeObjectURL(url);
   }
