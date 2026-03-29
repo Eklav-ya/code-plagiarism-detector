@@ -936,7 +936,7 @@ export default function App() {
           <h1 style={{ opacity:fade?1:0, transform:fade?"translateY(0)":"translateY(10px)" }}>
             {toggleText ? <>Check for plagiarism in the<br />source code</> : <>Code <span style={{ color:"#0da4eb" }}>Plagiarism</span><br />Detector</>}
           </h1>
-          <p>Combines LLaMA 3.3 70B AI analysis (run twice, averaged) with deterministic algorithms — for results you can trust and present with confidence.</p>
+          <p>Combines LLaMA 3.3 70B AI analysis (run twice, averaged) with deterministic algorithms — for results you can trust and rely onto.</p>
           <div style={{ display:"flex", justifyContent:"flex-end", marginTop:"15px" }}>
             <button className="history-btn" onClick={() => setShowHistory(p => !p)}>📜 History ({history.length})</button>
           </div>
