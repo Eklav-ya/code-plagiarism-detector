@@ -630,6 +630,17 @@ function ResultDetail({ result, fileAName, fileBName, codeAContent, codeBContent
     <InlineDiff codeAContent={codeAContent} codeBContent={codeBContent} fileAName={fileAName} fileBName={fileBName} />
     <div className="section-label">Detailed findings</div>
     <div className="findings">{result.findings}</div>
+
+    <div className="trust-banner" style={{ marginTop:"1.25rem" }}>
+      <strong>How results are produced</strong> — hybrid approach for maximum reliability:
+      <div className="trust-row">
+        <div className="trust-item"><div className="trust-dot" style={{ background:"#00e5a0" }} />Exact line matching — 100% algorithmic, fully reliable</div>
+        <div className="trust-item"><div className="trust-dot" style={{ background:"#00e5a0" }} />Code diff — LCS algorithm (same as Git), fully reliable</div>
+        <div className="trust-item"><div className="trust-dot" style={{ background:"#f5a623" }} />Similarity scores — blended: LLaMA 3.3 70B (×2, averaged) + algorithms</div>
+        <div className="trust-item"><div className="trust-dot" style={{ background:"#b08dff" }} />Logic/human/AI scores — AI estimates, indicative only</div>
+      </div>
+    </div>
+
     <ReliabilityInfo result={result} />
   </>);
 }
@@ -931,16 +942,6 @@ export default function App() {
           </div>
         </div>
 
-        <div className="trust-banner">
-          <strong>How results are produced</strong> — hybrid approach for maximum reliability:
-          <div className="trust-row">
-            <div className="trust-item"><div className="trust-dot" style={{ background:"#00e5a0" }} />Exact line matching — 100% algorithmic, fully reliable</div>
-            <div className="trust-item"><div className="trust-dot" style={{ background:"#00e5a0" }} />Code diff — LCS algorithm (same as Git), fully reliable</div>
-            <div className="trust-item"><div className="trust-dot" style={{ background:"#f5a623" }} />Similarity scores — blended: LLaMA 3.3 70B (×2, averaged) + algorithms</div>
-            <div className="trust-item"><div className="trust-dot" style={{ background:"#b08dff" }} />Logic/human/AI scores — AI estimates, indicative only</div>
-          </div>
-        </div>
-
         {showHistory && (
           <div ref={historyRef} className="history-panel">
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"8px" }}>
@@ -1030,6 +1031,17 @@ export default function App() {
 
             <div className="section-label">Detailed findings</div>
             <div className="findings">{result.findings}</div>
+
+            <div className="trust-banner" style={{ marginTop:"1.25rem" }}>
+              <strong>How results are produced</strong> — hybrid approach for maximum reliability:
+              <div className="trust-row">
+                <div className="trust-item"><div className="trust-dot" style={{ background:"#00e5a0" }} />Exact line matching — 100% algorithmic, fully reliable</div>
+                <div className="trust-item"><div className="trust-dot" style={{ background:"#00e5a0" }} />Code diff — LCS algorithm (same as Git), fully reliable</div>
+                <div className="trust-item"><div className="trust-dot" style={{ background:"#f5a623" }} />Similarity scores — blended: LLaMA 3.3 70B (×2, averaged) + algorithms</div>
+                <div className="trust-item"><div className="trust-dot" style={{ background:"#b08dff" }} />Logic/human/AI scores — AI estimates, indicative only</div>
+              </div>
+            </div>
+
             <ReliabilityInfo result={result} />
           </div>)}
         </>)}
