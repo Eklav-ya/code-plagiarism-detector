@@ -426,22 +426,72 @@ const CSS = `
 
 function DropZone({ label, file, onFile, onRemove }) {
   const [drag, setDrag] = useState(false);
+  const [showPaste, setShowPaste] = useState(false);
+  const [pasteText, setPasteText] = useState("");
   const lang = detectLanguage(file);
   const onDrop = useCallback((e) => { e.preventDefault(); setDrag(false); const f = e.dataTransfer.files[0]; if (f) onFile(f); }, [onFile]);
+
+  function handlePasteSubmit() {
+    if (!pasteText.trim()) return;
+    const filename = `pasted-${label.toLowerCase().replace(/\s|—/g, "-")}.txt`;
+    const blob = new Blob([pasteText], { type: "text/plain" });
+    const f = new File([blob], filename, { type: "text/plain" });
+    onFile(f);
+    setShowPaste(false);
+    setPasteText("");
+  }
+
   return (
-    <div className={`drop-zone${file ? " filled" : ""}${drag ? " drag" : ""}`}
-      onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)} onDrop={onDrop}>
-      {file && <button className="dz-remove" onClick={(e) => { e.stopPropagation(); onRemove(); }}>✕</button>}
-      <input type="file" accept=".js,.jsx,.ts,.tsx,.py,.java,.c,.cpp,.cs,.go,.rs,.rb,.php,.swift,.kt,.html,.css,.txt"
-        onChange={(e) => e.target.files[0] && onFile(e.target.files[0])} />
-      <span className="dz-icon">{file ? "✦" : "↑"}</span>
-      <div className="dz-label">{label}</div>
-      {file ? (<>
-        <div className="dz-name">{file.name}</div>
-        {lang && <div style={{ display:"flex", justifyContent:"center", marginTop:"6px" }}>
-          <span className="lang-badge"><span>{lang.emoji}</span><span>{lang.label}</span></span>
-        </div>}
-      </>) : <div className="dz-hint">click or drag & drop</div>}
+    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+      <div className={`drop-zone${file ? " filled" : ""}${drag ? " drag" : ""}`}
+        onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)} onDrop={onDrop}>
+        {file && <button className="dz-remove" onClick={(e) => { e.stopPropagation(); onRemove(); }}>✕</button>}
+        <input type="file" accept=".js,.jsx,.ts,.tsx,.py,.java,.c,.cpp,.cs,.go,.rs,.rb,.php,.swift,.kt,.html,.css,.txt"
+          onChange={(e) => e.target.files[0] && onFile(e.target.files[0])} />
+        <span className="dz-icon">{file ? "✦" : "↑"}</span>
+        <div className="dz-label">{label}</div>
+        {file ? (<>
+          <div className="dz-name">{file.name}</div>
+          {lang && <div style={{ display:"flex", justifyContent:"center", marginTop:"6px" }}>
+            <span className="lang-badge"><span>{lang.emoji}</span><span>{lang.label}</span></span>
+          </div>}
+        </>) : <div className="dz-hint">click or drag & drop</div>}
+      </div>
+
+      {/* Paste toggle button */}
+      <button
+        className="glass-btn"
+        style={{ width: "100%", justifyContent: "center", fontSize: "11px", padding: "7px 12px" }}
+        onClick={() => setShowPaste(p => !p)}
+      >
+        {showPaste ? "✕ Cancel paste" : "📋 Paste code instead"}
+      </button>
+
+      {/* Paste panel */}
+      {showPaste && (
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border2)", borderRadius: "10px", padding: "10px", display: "flex", flexDirection: "column", gap: "8px" }}>
+          <textarea
+            autoFocus
+            value={pasteText}
+            onChange={(e) => setPasteText(e.target.value)}
+            placeholder={`Paste your ${label} code here...`}
+            style={{
+              width: "100%", minHeight: "140px", background: "var(--surface2)",
+              border: "1px solid var(--border2)", borderRadius: "8px",
+              color: "var(--text)", fontFamily: "var(--mono)", fontSize: "12px",
+              padding: "10px", resize: "vertical", outline: "none", lineHeight: "1.6",
+            }}
+          />
+          <button
+            className="glass-btn"
+            style={{ justifyContent: "center", background: "rgba(0,229,160,0.12)", borderColor: "rgba(0,229,160,0.35)", color: "var(--accent)", fontWeight: 600 }}
+            onClick={handlePasteSubmit}
+            disabled={!pasteText.trim()}
+          >
+            ✓ Use this code
+          </button>
+        </div>
+      )}
     </div>
   );
 }
