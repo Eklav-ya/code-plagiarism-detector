@@ -10,7 +10,6 @@ const readFile = (file) =>
     r.readAsText(file);
   });
 
-// ─── IMPROVEMENT 1: Normalize code before comparison ─────────────────────────
 function normalizeCode(code) {
   return code
     .replace(/\/\/.*$/gm, "")
@@ -21,7 +20,6 @@ function normalizeCode(code) {
     .toLowerCase();
 }
 
-// ─── IMPROVEMENT 2: Enhanced matching ────────────────────────────────────────
 function getMatchingLines(codeA, codeB) {
   const rawA = codeA.split("\n").map(l => l.trim()).filter(l => l.length > 4);
   const rawB = new Set(codeB.split("\n").map(l => l.trim()).filter(l => l.length > 4));
@@ -36,7 +34,6 @@ function getNormalizedOverlapPct(codeA, codeB) {
   return Math.round((matches / normA.length) * 100);
 }
 
-// ─── IMPROVEMENT 3: Jaccard token similarity ─────────────────────────────────
 function getTokenSimilarity(codeA, codeB) {
   const tokenize = (code) => new Set(
     code.toLowerCase().replace(/[^a-z0-9_\s]/g, " ").split(/\s+/).filter(t => t.length > 2)
@@ -49,7 +46,6 @@ function getTokenSimilarity(codeA, codeB) {
   return Math.round((intersection / union) * 100);
 }
 
-// ─── IMPROVEMENT 4: Structural fingerprint ───────────────────────────────────
 function getStructuralScore(codeA, codeB) {
   const extractIdents = (code) => {
     const matches = code.match(/\b(def |function |class |const |let |var )\s*([a-zA-Z_]\w*)/g) || [];
@@ -142,7 +138,6 @@ async function callGroqAPI(payload) {
   return data.choices?.[0]?.message?.content || "";
 }
 
-// ─── IMPROVEMENT 5: Double AI run, averaged scores ────────────────────────────
 async function callGroqOnce(nameA, nameB, codeA, codeB) {
   const prompt = `You are an expert code plagiarism analyst. Be precise and consistent.
 
@@ -198,7 +193,6 @@ async function analyzeFilePair(fileA, fileB, codeA, codeB) {
   const algoStructSim   = getStructuralScore(codeA, codeB);
   const algoNormOverlap = getNormalizedOverlapPct(codeA, codeB);
 
-  // 60% AI + 40% algorithmic blend
   const blendedSimilarity   = Math.round(avg("similarity_percent")  * 0.6 + algoNormOverlap * 0.4);
   const blendedTokenOverlap = Math.round(avg("token_overlap")        * 0.6 + algoTokenSim    * 0.4);
   const blendedStructure    = Math.round(avg("structure_similarity") * 0.6 + algoStructSim   * 0.4);
@@ -241,6 +235,14 @@ function heatTextColor(pct) {
   if (pct >= 40) return "#f5a623";
   if (pct >= 15) return "#80d8ff";
   return "#00e5a0";
+}
+
+// ─── getRiskLabel: used in One-to-Many leaderboard ───────────────────────────
+function getRiskLabel(pct) {
+  if (pct >= 70) return { label: "HIGH RISK", color: "#ff4f4f", bg: "rgba(255,79,79,0.15)", border: "rgba(255,79,79,0.4)" };
+  if (pct >= 40) return { label: "MEDIUM RISK", color: "#f5a623", bg: "rgba(245,166,35,0.12)", border: "rgba(245,166,35,0.4)" };
+  if (pct >= 15) return { label: "LOW RISK", color: "#80d8ff", bg: "rgba(128,216,255,0.1)", border: "rgba(128,216,255,0.3)" };
+  return { label: "CLEAN", color: "#00e5a0", bg: "rgba(0,229,160,0.08)", border: "rgba(0,229,160,0.3)" };
 }
 
 const CSS = `
@@ -422,8 +424,60 @@ const CSS = `
   .pill-high   { color:var(--danger); border-color:rgba(255,79,79,0.4);   background:rgba(255,79,79,0.08); }
   .stroke-none { stroke:var(--safe); } .stroke-low { stroke:#80d8ff; } .stroke-medium { stroke:var(--warn); } .stroke-high { stroke:var(--danger); }
   .fill-none { background:var(--safe); } .fill-low { background:#80d8ff; } .fill-medium { background:var(--warn); } .fill-high { background:var(--danger); }
+
+  /* ── ONE-TO-MANY STYLES ─────────────────────────────────────────────────── */
+  .otm-layout { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:1.5rem; }
+  @media(max-width:640px) { .otm-layout { grid-template-columns:1fr; } }
+  .otm-source-zone { border:2px solid rgba(0,229,160,0.35); border-radius:12px; padding:1.5rem; background:rgba(0,229,160,0.04); position:relative; }
+  .otm-source-label { font-family:var(--mono); font-size:10px; letter-spacing:2px; text-transform:uppercase; color:var(--accent); margin-bottom:10px; display:flex; align-items:center; gap:6px; }
+  .otm-source-label::before { content:""; display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--accent); box-shadow:0 0 8px var(--accent); }
+  .otm-submissions-zone { border:1.5px dashed var(--border2); border-radius:12px; padding:1.5rem; background:rgba(20,20,30,0.6); position:relative; }
+  .otm-submissions-label { font-family:var(--mono); font-size:10px; letter-spacing:2px; text-transform:uppercase; color:var(--muted); margin-bottom:10px; display:flex; align-items:center; gap:6px; }
+  .otm-submissions-zone input { position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%; z-index:1; }
+  .otm-sub-drop-content { text-align:center; pointer-events:none; }
+  .otm-file-list { margin-top:10px; display:flex; flex-direction:column; gap:6px; max-height:200px; overflow-y:auto; position:relative; z-index:2; }
+  .otm-file-list::-webkit-scrollbar { width:3px; }
+  .otm-file-list::-webkit-scrollbar-thumb { background:var(--border2); border-radius:2px; }
+  .otm-file-row { display:flex; align-items:center; gap:8px; padding:6px 10px; background:var(--surface); border:1px solid var(--border); border-radius:8px; font-family:var(--mono); font-size:11px; }
+  .otm-file-row .file-name { flex:1; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .otm-file-row .file-remove { background:none; border:none; color:var(--muted); cursor:pointer; font-size:11px; padding:0; line-height:1; transition:color 0.15s; flex-shrink:0; }
+  .otm-file-row .file-remove:hover { color:var(--danger); }
+
+  /* Leaderboard */
+  .otm-leaderboard { margin-bottom:1.5rem; }
+  .otm-summary-row { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:1.25rem; }
+  @media(max-width:600px) { .otm-summary-row { grid-template-columns:1fr 1fr; } }
+  .otm-summary-card { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:1rem 1.1rem; text-align:center; }
+  .otm-summary-card .s-val { font-family:var(--mono); font-size:24px; font-weight:600; line-height:1; }
+  .otm-summary-card .s-lbl { font-family:var(--mono); font-size:10px; color:var(--muted); margin-top:4px; letter-spacing:1px; text-transform:uppercase; }
+  .otm-table { width:100%; border-collapse:collapse; font-family:var(--mono); font-size:12px; }
+  .otm-table thead tr { border-bottom:1px solid var(--border2); }
+  .otm-table th { padding:8px 12px; text-align:left; font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--muted); font-weight:500; }
+  .otm-table td { padding:0; border-bottom:1px solid rgba(255,255,255,0.04); }
+  .otm-table tr:last-child td { border-bottom:none; }
+  .otm-row-inner { display:flex; align-items:center; gap:10px; padding:10px 12px; cursor:pointer; transition:background 0.15s; border-radius:6px; }
+  .otm-row-inner:hover { background:rgba(255,255,255,0.04); }
+  .otm-rank { font-size:11px; color:var(--muted); min-width:24px; text-align:center; flex-shrink:0; }
+  .otm-rank.rank-1 { color:#ffd700; font-weight:700; font-size:14px; }
+  .otm-rank.rank-2 { color:#b08dff; font-weight:700; }
+  .otm-rank.rank-3 { color:#f5a623; font-weight:700; }
+  .otm-file-info { flex:1; min-width:0; }
+  .otm-file-info .fname { color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:220px; }
+  .otm-file-info .fmeta { font-size:10px; color:var(--muted); margin-top:2px; }
+  .otm-bar-wrap { width:120px; flex-shrink:0; }
+  .otm-bar-track { height:5px; background:var(--border2); border-radius:3px; overflow:hidden; }
+  .otm-bar-fill { height:100%; border-radius:3px; transition:width 0.8s ease; }
+  .otm-pct { min-width:40px; text-align:right; font-weight:600; flex-shrink:0; }
+  .otm-risk-badge { flex-shrink:0; font-size:9px; font-weight:700; letter-spacing:0.8px; padding:2px 8px; border-radius:10px; border:1px solid; white-space:nowrap; }
+  .otm-spinner-row { display:flex; align-items:center; gap:10px; padding:10px 12px; font-family:var(--mono); font-size:11px; color:var(--muted); }
+  .otm-progress-label { margin-bottom:10px; font-family:var(--mono); font-size:12px; color:var(--muted); display:flex; justify-content:space-between; }
+  .otm-export-row { display:flex; gap:8px; flex-wrap:wrap; margin-top:1rem; margin-bottom:1.5rem; }
+
+  /* Source file badge in leaderboard header */
+  .otm-source-badge { display:inline-flex; align-items:center; gap:6px; background:rgba(0,229,160,0.1); border:1px solid rgba(0,229,160,0.3); border-radius:8px; padding:6px 12px; font-family:var(--mono); font-size:11px; color:var(--accent); margin-bottom:1rem; }
 `;
 
+// ─── Shared sub-components ─────────────────────────────────────────────────────
 function DropZone({ label, file, onFile, onRemove }) {
   const [drag, setDrag] = useState(false);
   const [showPaste, setShowPaste] = useState(false);
@@ -457,39 +511,16 @@ function DropZone({ label, file, onFile, onRemove }) {
           </div>}
         </>) : <div className="dz-hint">click or drag & drop</div>}
       </div>
-
-      {/* Paste toggle button */}
-      <button
-        className="glass-btn"
-        style={{ width: "100%", justifyContent: "center", fontSize: "11px", padding: "7px 12px" }}
-        onClick={() => setShowPaste(p => !p)}
-      >
+      <button className="glass-btn" style={{ width:"100%", justifyContent:"center", fontSize:"11px", padding:"7px 12px" }} onClick={() => setShowPaste(p => !p)}>
         {showPaste ? "✕ Cancel paste" : "📋 Paste code instead"}
       </button>
-
-      {/* Paste panel */}
       {showPaste && (
-        <div style={{ background: "var(--surface)", border: "1px solid var(--border2)", borderRadius: "10px", padding: "10px", display: "flex", flexDirection: "column", gap: "8px" }}>
-          <textarea
-            autoFocus
-            value={pasteText}
-            onChange={(e) => setPasteText(e.target.value)}
+        <div style={{ background:"var(--surface)", border:"1px solid var(--border2)", borderRadius:"10px", padding:"10px", display:"flex", flexDirection:"column", gap:"8px" }}>
+          <textarea autoFocus value={pasteText} onChange={(e) => setPasteText(e.target.value)}
             placeholder={`Paste your ${label} code here...`}
-            style={{
-              width: "100%", minHeight: "140px", background: "var(--surface2)",
-              border: "1px solid var(--border2)", borderRadius: "8px",
-              color: "var(--text)", fontFamily: "var(--mono)", fontSize: "12px",
-              padding: "10px", resize: "vertical", outline: "none", lineHeight: "1.6",
-            }}
-          />
-          <button
-            className="glass-btn"
-            style={{ justifyContent: "center", background: "rgba(0,229,160,0.12)", borderColor: "rgba(0,229,160,0.35)", color: "var(--accent)", fontWeight: 600 }}
-            onClick={handlePasteSubmit}
-            disabled={!pasteText.trim()}
-          >
-            ✓ Use this code
-          </button>
+            style={{ width:"100%", minHeight:"140px", background:"var(--surface2)", border:"1px solid var(--border2)", borderRadius:"8px", color:"var(--text)", fontFamily:"var(--mono)", fontSize:"12px", padding:"10px", resize:"vertical", outline:"none", lineHeight:"1.6" }} />
+          <button className="glass-btn" style={{ justifyContent:"center", background:"rgba(0,229,160,0.12)", borderColor:"rgba(0,229,160,0.35)", color:"var(--accent)", fontWeight:600 }}
+            onClick={handlePasteSubmit} disabled={!pasteText.trim()}>✓ Use this code</button>
         </div>
       )}
     </div>
@@ -680,7 +711,6 @@ function ResultDetail({ result, fileAName, fileBName, codeAContent, codeBContent
     <InlineDiff codeAContent={codeAContent} codeBContent={codeBContent} fileAName={fileAName} fileBName={fileBName} />
     <div className="section-label">Detailed findings</div>
     <div className="findings">{result.findings}</div>
-
     <div className="trust-banner" style={{ marginTop:"1.25rem" }}>
       <strong>How results are produced</strong> — hybrid approach for maximum reliability:
       <div className="trust-row">
@@ -690,7 +720,6 @@ function ResultDetail({ result, fileAName, fileBName, codeAContent, codeBContent
         <div className="trust-item"><div className="trust-dot" style={{ background:"#b08dff" }} />Logic/human/AI scores — AI estimates, indicative only</div>
       </div>
     </div>
-
     <ReliabilityInfo result={result} />
   </>);
 }
@@ -743,6 +772,395 @@ function BatchMatrix({ files, matrix, loadingCells, onCellClick }) {
   );
 }
 
+// ─── ONE-TO-MANY MODE ─────────────────────────────────────────────────────────
+function OneToManyMode() {
+  const [sourceFile, setSourceFile]       = useState(null);
+  const [sourceContent, setSourceContent] = useState("");
+  const [subFiles, setSubFiles]           = useState([]);
+  const [results, setResults]             = useState([]);  // [{file, result, content}]
+  const [loadingSet, setLoadingSet]       = useState(new Set());
+  const [running, setRunning]             = useState(false);
+  const [progress, setProgress]           = useState({ done:0, total:0 });
+  const [error, setError]                 = useState("");
+  const [modalItem, setModalItem]         = useState(null);
+  const [sortBy, setSortBy]               = useState("pct_desc");
+  const [dragSub, setDragSub]             = useState(false);
+
+  // Load source file
+  async function handleSourceFile(f) {
+    setSourceFile(f);
+    const content = await readFile(f);
+    setSourceContent(content);
+    setResults([]);
+  }
+
+  // Add submission files (dedup by name)
+  function addSubFiles(newFiles) {
+    setSubFiles(prev => {
+      const ex = new Set(prev.map(f => f.name));
+      return [...prev, ...newFiles.filter(f => !ex.has(f.name) && f.name !== sourceFile?.name)];
+    });
+    setResults([]);
+  }
+
+  function removeSubFile(idx) {
+    setSubFiles(prev => prev.filter((_, i) => i !== idx));
+    setResults([]);
+  }
+
+  async function runAnalysis() {
+    if (!sourceFile || subFiles.length === 0) return;
+    setError(""); setRunning(true); setResults([]);
+    setProgress({ done:0, total:subFiles.length });
+
+    const CONCURRENCY = 2;
+    let idx = 0;
+    const allResults = new Array(subFiles.length).fill(null);
+
+    async function runNext() {
+      while (idx < subFiles.length) {
+        const i = idx++;
+        const f = subFiles[i];
+        setLoadingSet(prev => new Set([...prev, i]));
+        try {
+          const subContent = await readFile(f);
+          // Use a fake File wrapper so analyzeFilePair gets names right
+          const fakeSource = { name: sourceFile.name };
+          const res = await analyzeFilePair(fakeSource, { name: f.name }, sourceContent, subContent);
+          allResults[i] = { file: f, result: res, content: subContent };
+        } catch(e) {
+          allResults[i] = {
+            file: f,
+            content: "",
+            result: {
+              similarity_percent: 0, logic_similarity: 0, structure_similarity: 0,
+              token_overlap: 0, human_score: 100, ai_generated_likelihood: 0,
+              language_a: "Unknown", language_b: "Unknown",
+              summary: "Analysis failed: " + e.message, findings: e.message,
+              ai_reason: "", algo_token_similarity: 0, algo_structural_score: 0,
+              algo_normalized_overlap: 0, ai_run_count: 0, matchingLines: [],
+              nameA: sourceFile.name, nameB: f.name, timestamp: new Date().toLocaleString(),
+            }
+          };
+        }
+        setLoadingSet(prev => { const s = new Set(prev); s.delete(i); return s; });
+        setProgress(prev => ({ ...prev, done: prev.done + 1 }));
+        // Progressive update
+        setResults(allResults.filter(Boolean).map(r => r));
+      }
+    }
+
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, subFiles.length) }, runNext));
+    setResults(allResults.filter(Boolean));
+    setRunning(false);
+  }
+
+  // Sort results
+  const sortedResults = useMemo(() => {
+    const r = [...results];
+    if (sortBy === "pct_desc") r.sort((a,b) => b.result.similarity_percent - a.result.similarity_percent);
+    else if (sortBy === "pct_asc") r.sort((a,b) => a.result.similarity_percent - b.result.similarity_percent);
+    else if (sortBy === "name") r.sort((a,b) => a.file.name.localeCompare(b.file.name));
+    return r;
+  }, [results, sortBy]);
+
+  // Summary stats
+  const doneCount  = results.length;
+  const highRisk   = results.filter(r => r.result.similarity_percent >= 70).length;
+  const medRisk    = results.filter(r => r.result.similarity_percent >= 40 && r.result.similarity_percent < 70).length;
+  const cleanCount = results.filter(r => r.result.similarity_percent < 15).length;
+  const avgPct     = doneCount ? Math.round(results.reduce((s,r) => s + r.result.similarity_percent, 0) / doneCount) : 0;
+
+  // Export leaderboard as CSV
+  function exportCSV() {
+    if (!results.length) return;
+    const header = ["Rank","File","Similarity %","Verdict","Risk","Logic Sim %","Structure %","Token Overlap %","Matching Lines","Timestamp"];
+    const rows = sortedResults.map((item, i) => {
+      const r = item.result;
+      return [i+1, item.file.name, r.similarity_percent, getVerdict(r.similarity_percent), getRiskLabel(r.similarity_percent).label, r.logic_similarity, r.structure_similarity, r.token_overlap, r.matchingLines?.length ?? 0, r.timestamp];
+    });
+    const csv = [header, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type:"text/csv" });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a"); a.href = url;
+    a.download = `one-to-many-report-${sourceFile?.name ?? "source"}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+  }
+
+  // Export JSON
+  function exportJSON() {
+    if (!results.length) return;
+    const report = {
+      report_type: "one-to-many",
+      source_file: sourceFile?.name,
+      generated_at: new Date().toLocaleString(),
+      summary: { total: results.length, high_risk: highRisk, medium_risk: medRisk, clean: cleanCount, avg_similarity: avgPct },
+      results: sortedResults.map((item, i) => ({
+        rank: i+1, file: item.file.name, similarity_percent: item.result.similarity_percent,
+        verdict: getVerdict(item.result.similarity_percent), ...item.result
+      }))
+    };
+    const blob = new Blob([JSON.stringify(report, null, 2)], { type:"application/json" });
+    const url = URL.createObjectURL(blob);
+    const a   = document.createElement("a"); a.href = url;
+    a.download = `one-to-many-report-${sourceFile?.name ?? "source"}.json`;
+    a.click(); URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div>
+      {/* Upload layout */}
+      <div className="otm-layout">
+        {/* Source file */}
+        <div className="otm-source-zone">
+          <div className="otm-source-label">Base / Source Code</div>
+          {!sourceFile ? (
+            <div style={{ position:"relative" }}>
+              <div className="drop-zone" style={{ border:"none", padding:"1.25rem", background:"transparent" }}>
+                <input type="file" accept=".js,.jsx,.ts,.tsx,.py,.java,.c,.cpp,.cs,.go,.rs,.rb,.php,.swift,.kt,.html,.css,.txt"
+                  onChange={(e) => e.target.files[0] && handleSourceFile(e.target.files[0])} />
+                <span className="dz-icon">🔑</span>
+                <div className="dz-label">Upload source file</div>
+                <div className="dz-hint">The "original" — all submissions compared to this</div>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <div style={{ display:"flex", alignItems:"center", gap:"10px", padding:"10px 0" }}>
+                <span style={{ fontSize:"22px" }}>{detectLanguage(sourceFile)?.emoji}</span>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontFamily:"var(--mono)", fontSize:"13px", color:"var(--accent)", fontWeight:600, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{sourceFile.name}</div>
+                  <div style={{ fontFamily:"var(--mono)", fontSize:"10px", color:"var(--muted)", marginTop:"2px" }}>{detectLanguage(sourceFile)?.label} · Base file</div>
+                </div>
+                <button className="glass-btn danger" style={{ padding:"4px 10px", fontSize:"11px" }} onClick={() => { setSourceFile(null); setSourceContent(""); setResults([]); }}>✕</button>
+              </div>
+              <div style={{ fontFamily:"var(--mono)", fontSize:"10px", color:"var(--muted)", padding:"6px 8px", background:"rgba(0,229,160,0.05)", borderRadius:"6px", border:"1px solid rgba(0,229,160,0.15)" }}>
+                ✓ {sourceContent.split("\n").length} lines · {(sourceContent.length / 1024).toFixed(1)} KB loaded
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Submission files */}
+        <div className="otm-submissions-zone">
+          <div className="otm-submissions-label">Student Submissions</div>
+          <div
+            className={dragSub ? "drag" : ""}
+            style={{ position:"relative", border:"1.5px dashed var(--border2)", borderRadius:"10px", padding:"1.25rem", textAlign:"center", transition:"border-color 0.2s, background 0.2s", background: dragSub ? "rgba(0,229,160,0.04)" : "transparent", ...(dragSub ? {borderColor:"var(--accent)"} : {}) }}
+            onDragOver={(e) => { e.preventDefault(); setDragSub(true); }}
+            onDragLeave={() => setDragSub(false)}
+            onDrop={(e) => { e.preventDefault(); setDragSub(false); const fs = Array.from(e.dataTransfer.files); if (fs.length) addSubFiles(fs); }}
+          >
+            <input type="file" multiple accept=".js,.jsx,.ts,.tsx,.py,.java,.c,.cpp,.cs,.go,.rs,.rb,.php,.swift,.kt,.html,.css,.txt"
+              style={{ position:"absolute", inset:0, opacity:0, cursor:"pointer", width:"100%", height:"100%", zIndex:1 }}
+              onChange={(e) => { const fs = Array.from(e.target.files); if (fs.length) addSubFiles(fs); e.target.value = ""; }} />
+            <div className="otm-sub-drop-content">
+              <span style={{ fontSize:"24px", display:"block", marginBottom:"6px" }}>📂</span>
+              <div style={{ fontFamily:"var(--mono)", fontSize:"12px", color:"var(--accent)", marginBottom:"3px" }}>Drop student files here</div>
+              <div style={{ fontFamily:"var(--mono)", fontSize:"10px", color:"var(--muted)" }}>Multiple files · All compared to source</div>
+            </div>
+          </div>
+          {subFiles.length > 0 && (
+            <div className="otm-file-list" style={{ position:"relative", zIndex:2, marginTop:"10px" }}>
+              {subFiles.map((f, i) => {
+                const lang = detectLanguage(f);
+                const isLoading = loadingSet.has(i);
+                const res = results.find(r => r.file.name === f.name);
+                return (
+                  <div key={i} className="otm-file-row">
+                    <span>{lang?.emoji}</span>
+                    <span className="file-name">{f.name}</span>
+                    {isLoading && <div className="matrix-spinner" style={{ width:10, height:10 }} />}
+                    {res && <span style={{ fontSize:"10px", color: heatTextColor(res.result.similarity_percent), fontWeight:600 }}>{res.result.similarity_percent}%</span>}
+                    {!isLoading && <button className="file-remove" onClick={() => removeSubFile(i)}>✕</button>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {subFiles.length > 0 && (
+            <div style={{ marginTop:"8px", fontFamily:"var(--mono)", fontSize:"10px", color:"var(--muted)" }}>
+              {subFiles.length} file{subFiles.length !== 1 ? "s" : ""} queued
+            </div>
+          )}
+        </div>
+      </div>
+
+      {error && <div className="err">⚠ {error}</div>}
+
+      <button
+        className={`check-btn${running ? " busy" : ""}`}
+        onClick={runAnalysis}
+        disabled={running || !sourceFile || subFiles.length === 0}
+      >
+        {running
+          ? <><span className="spin" />Analyzing {progress.done}/{progress.total} submissions...</>
+          : `→ Run One-to-Many Analysis (${subFiles.length} submission${subFiles.length !== 1 ? "s" : ""})`}
+      </button>
+
+      {/* Progress bar */}
+      {running && progress.total > 0 && (
+        <div className="batch-progress" style={{ marginTop:"-1.5rem", marginBottom:"1.5rem" }}>
+          <div className="batch-status">
+            <span>Comparing against source...</span>
+            <span style={{ color:"var(--accent)" }}>{progress.done} / {progress.total}</span>
+          </div>
+          <div className="batch-progress-bar">
+            <div className="batch-progress-fill" style={{ width:`${(progress.done / progress.total) * 100}%` }} />
+          </div>
+        </div>
+      )}
+
+      {/* Leaderboard */}
+      {results.length > 0 && (
+        <div className="otm-leaderboard">
+          {/* Source badge */}
+          <div className="otm-source-badge">
+            🔑 Source: {sourceFile?.name} · {doneCount} submission{doneCount !== 1 ? "s" : ""} analyzed
+          </div>
+
+          {/* Summary row */}
+          <div className="otm-summary-row">
+            <div className="otm-summary-card">
+              <div className="s-val" style={{ color:"var(--danger)" }}>{highRisk}</div>
+              <div className="s-lbl">High Risk ≥70%</div>
+            </div>
+            <div className="otm-summary-card">
+              <div className="s-val" style={{ color:"var(--warn)" }}>{medRisk}</div>
+              <div className="s-lbl">Medium Risk 40–69%</div>
+            </div>
+            <div className="otm-summary-card">
+              <div className="s-val" style={{ color:"var(--safe)" }}>{cleanCount}</div>
+              <div className="s-lbl">Clean &lt;15%</div>
+            </div>
+            <div className="otm-summary-card">
+              <div className="s-val" style={{ color: heatTextColor(avgPct) }}>{avgPct}%</div>
+              <div className="s-lbl">Avg Similarity</div>
+            </div>
+          </div>
+
+          {/* Sort controls + export */}
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:"12px", flexWrap:"wrap", gap:"8px" }}>
+            <div className="section-label" style={{ margin:0 }}>
+              Similarity leaderboard — {doneCount} result{doneCount !== 1 ? "s" : ""}
+              {running && <span style={{ color:"var(--muted)", marginLeft:"8px" }}>(updating live…)</span>}
+            </div>
+            <div style={{ display:"flex", gap:"6px", alignItems:"center" }}>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                style={{ background:"var(--surface)", border:"1px solid var(--border2)", borderRadius:"7px", color:"var(--text)", fontFamily:"var(--mono)", fontSize:"11px", padding:"5px 10px", cursor:"pointer", outline:"none" }}
+              >
+                <option value="pct_desc">Sort: Highest first</option>
+                <option value="pct_asc">Sort: Lowest first</option>
+                <option value="name">Sort: Name A–Z</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Table */}
+          <div style={{ background:"var(--surface)", border:"1px solid var(--border2)", borderRadius:"12px", overflow:"hidden", marginBottom:"1rem" }}>
+            <table className="otm-table">
+              <thead>
+                <tr>
+                  <th style={{ width:"40px" }}>#</th>
+                  <th>File</th>
+                  <th style={{ width:"130px" }}>Similarity</th>
+                  <th style={{ width:"100px" }}>Risk Level</th>
+                  <th style={{ width:"90px" }}>Matches</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedResults.map((item, i) => {
+                  const r = item.result;
+                  const pct = r.similarity_percent;
+                  const risk = getRiskLabel(pct);
+                  const lang = detectLanguage(item.file);
+                  const rankCls = i === 0 ? "rank-1" : i === 1 ? "rank-2" : i === 2 ? "rank-3" : "";
+                  return (
+                    <tr key={item.file.name}>
+                      <td>
+                        <div className="otm-row-inner" style={{ cursor:"default", paddingRight:0 }}>
+                          <span className={`otm-rank ${rankCls}`}>{i+1}</span>
+                        </div>
+                      </td>
+                      <td colSpan={4}>
+                        <div className="otm-row-inner" onClick={() => setModalItem(item)} style={{ display:"grid", gridTemplateColumns:"1fr 130px 100px 90px", gap:"10px", alignItems:"center" }}>
+                          <div className="otm-file-info">
+                            <div className="fname">{lang?.emoji} {item.file.name}</div>
+                            <div className="fmeta">{r.language_b} · {r.matchingLines?.length ?? 0} exact matches · click for details</div>
+                          </div>
+                          <div className="otm-bar-wrap">
+                            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:"3px" }}>
+                              <span style={{ fontFamily:"var(--mono)", fontSize:"10px", color:"var(--muted)" }}>{getVerdict(pct)}</span>
+                              <span className="otm-pct" style={{ fontSize:"13px", color:heatTextColor(pct) }}>{pct}%</span>
+                            </div>
+                            <div className="otm-bar-track">
+                              <div className="otm-bar-fill" style={{ width:`${pct}%`, background: pct >= 70 ? "#ff4f4f" : pct >= 40 ? "#f5a623" : pct >= 15 ? "#80d8ff" : "#00e5a0" }} />
+                            </div>
+                          </div>
+                          <div>
+                            <span className="otm-risk-badge" style={{ color:risk.color, background:risk.bg, borderColor:risk.border }}>{risk.label}</span>
+                          </div>
+                          <div style={{ fontFamily:"var(--mono)", fontSize:"12px", color:heatTextColor(r.algo_normalized_overlap ?? 0) }}>
+                            {r.matchingLines?.length ?? 0} lines
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {/* Loading rows for in-progress files */}
+                {running && loadingSet.size > 0 && [...loadingSet].map(idx => (
+                  <tr key={`loading-${idx}`}>
+                    <td colSpan={5}>
+                      <div className="otm-spinner-row">
+                        <div className="matrix-spinner" />
+                        <span>Analyzing {subFiles[idx]?.name}…</span>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Export row */}
+          {!running && (
+            <div className="otm-export-row">
+              <button className="glass-btn" onClick={exportCSV}>📊 Export CSV</button>
+              <button className="glass-btn" onClick={exportJSON}>⬇ Export JSON</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Detail modal */}
+      {modalItem && (
+        <div className="modal-overlay" onClick={() => setModalItem(null)}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <button className="modal-close" onClick={() => setModalItem(null)}>✕ Close</button>
+            <div className="modal-title">
+              🔑 {sourceFile?.name} ↔ 📄 {modalItem.file.name}
+              <span style={{ marginLeft:"10px", padding:"2px 8px", borderRadius:"6px", fontSize:"10px", ...(() => { const r = getRiskLabel(modalItem.result.similarity_percent); return { background:r.bg, color:r.color, border:`1px solid ${r.border}` }; })() }}>
+                {getRiskLabel(modalItem.result.similarity_percent).label}
+              </span>
+            </div>
+            <ResultDetail
+              result={modalItem.result}
+              fileAName={sourceFile?.name}
+              fileBName={modalItem.file.name}
+              codeAContent={sourceContent}
+              codeBContent={modalItem.content}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [mode, setMode]               = useState("pair");
   const [fileA, setFileA]             = useState(null);
@@ -857,12 +1275,10 @@ export default function App() {
     };
     const addSpacer = (h = 4) => { y += h; };
     const addDivider = () => { doc.setDrawColor(180,180,180); doc.line(10, y, 200, y); y += 5; };
-
     addLine("CODE PLAGIARISM DETECTION REPORT", { bold:true, size:14, gap:8 });
     addLine(`Generated  : ${new Date().toLocaleString()}`, { size:9, gap:5 });
     addLine(`Powered by : LLaMA 3.3 70B (Groq API) + Algorithmic Analysis`, { size:9, gap:5 });
     addDivider();
-
     addLine("COMPARISON SUBJECT", { bold:true, size:10, gap:7 });
     addLine(`Comparison result for "${result.nameA}" and "${result.nameB}" are as follows:`, { size:10, gap:7 });
     addLine(`File A (Original) : ${result.nameA}`, { gap:6 });
@@ -870,24 +1286,20 @@ export default function App() {
     addLine(`Language A        : ${result.language_a}`, { gap:6 });
     addLine(`Language B        : ${result.language_b}`, { gap:6 });
     addSpacer(2); addDivider();
-
     addLine("VERDICT", { bold:true, size:10, gap:7 });
     addLine(`Overall Verdict : ${getVerdict(result.similarity_percent)}`, { bold:true, size:11, gap:7 });
     addSpacer(2); addDivider();
-
     addLine("BLENDED SCORES (60% AI + 40% Algorithmic)", { bold:true, size:10, gap:7 });
     addLine(`Overall Similarity   : ${result.similarity_percent}%`, { gap:6 });
     addLine(`Structure Similarity : ${result.structure_similarity}%`, { gap:6 });
     addLine(`Token Overlap        : ${result.token_overlap}%`, { gap:6 });
     addSpacer(2); addDivider();
-
     addLine("ALGORITHMIC SCORES (100% Deterministic — Fully Reliable)", { bold:true, size:10, gap:7 });
     addLine(`Token Similarity (Jaccard)     : ${result.algo_token_similarity ?? "N/A"}%`, { gap:6 });
     addLine(`Structural Match (func names)  : ${result.algo_structural_score ?? "N/A"}%`, { gap:6 });
     addLine(`Normalized Line Overlap        : ${result.algo_normalized_overlap ?? "N/A"}%`, { gap:6 });
     addLine(`Exact Matching Lines           : ${result.matchingLines?.length ?? 0}`, { gap:6 });
     addSpacer(2); addDivider();
-
     addLine("AI-ESTIMATED SCORES (Indicative Only)", { bold:true, size:10, gap:7 });
     addLine(`Logic Similarity        : ${result.logic_similarity}%`, { gap:6 });
     addLine(`Human-Written Score     : ${result.human_score ?? (100 - result.similarity_percent)}%`, { gap:6 });
@@ -895,28 +1307,23 @@ export default function App() {
     addLine(`AI Analysis Runs        : ${result.ai_run_count ?? 1} (averaged for consistency)`, { gap:6 });
     if (result.ai_reason) { addSpacer(2); addLine(`AI Note: ${result.ai_reason}`, { size:9, gap:6 }); }
     addSpacer(2); addDivider();
-
     addLine("SUMMARY", { bold:true, size:10, gap:7 });
     addLine(result.summary, { gap:6 });
     addSpacer(2); addDivider();
-
     if (result.matchingLines?.length) {
       addLine(`EXACT MATCHING LINES — ${result.matchingLines.length} found (algorithmically verified)`, { bold:true, size:10, gap:7 });
       result.matchingLines.slice(0, 30).forEach((line, i) => addLine(`  ${i + 1}. ${line}`, { size:9, gap:5 }));
       if (result.matchingLines.length > 30) addLine(`  ... and ${result.matchingLines.length - 30} more`, { size:9, gap:5 });
       addSpacer(2); addDivider();
     }
-
     addLine("DETAILED FINDINGS", { bold:true, size:10, gap:7 });
     addLine(result.findings, { gap:6 });
     addSpacer(4); addDivider();
-
     addLine("RELIABILITY NOTICE", { bold:true, size:9, gap:6 });
     addLine("Exact line matches and diff are 100% algorithmically verified and fully reliable.", { size:9, gap:5 });
     addLine("Blended scores (60% AI + 40% algorithmic) are more reliable than pure AI estimates.", { size:9, gap:5 });
     addLine("AI-only scores are indicative estimates — not guaranteed accurate.", { size:9, gap:5 });
     addLine("Recommended use: screening tool. Human review advised for formal/legal decisions.", { size:9, gap:5 });
-
     const safeA = result.nameA.replace(/\.[^.]+$/, ""), safeB = result.nameB.replace(/\.[^.]+$/, "");
     doc.save(`plagiarism-${safeA}-vs-${safeB}.pdf`);
   }
@@ -933,45 +1340,15 @@ export default function App() {
         file_b: { name:result.nameB, role:"Suspect",  language:result.language_b },
       },
       verdict: getVerdict(result.similarity_percent),
-      blended_scores: {
-        note: "60% AI + 40% algorithmic — more reliable than pure AI",
-        overall_similarity_percent:   result.similarity_percent,
-        structure_similarity_percent: result.structure_similarity,
-        token_overlap_percent:        result.token_overlap,
-      },
-      algorithmic_scores: {
-        note: "100% deterministic — fully reliable",
-        token_similarity_jaccard_percent: result.algo_token_similarity,
-        structural_match_percent:         result.algo_structural_score,
-        normalized_line_overlap_percent:  result.algo_normalized_overlap,
-        exact_matching_lines_count:       result.matchingLines?.length ?? 0,
-      },
-      ai_estimated_scores: {
-        note: "AI-estimated — indicative only",
-        logic_similarity_percent:          result.logic_similarity,
-        human_written_percent:             result.human_score ?? (100 - result.similarity_percent),
-        ai_generated_likelihood_percent:   result.ai_generated_likelihood ?? null,
-        ai_run_count:                      result.ai_run_count ?? 1,
-        ai_model:                          "LLaMA 3.3 70B via Groq API",
-      },
-      ai_detection_note: result.ai_reason || null,
-      summary:  result.summary,
-      findings: result.findings,
-      matching_lines: {
-        count: result.matchingLines?.length ?? 0,
-        reliability: "100% algorithmically verified — exact string match",
-        lines: result.matchingLines ?? [],
-      },
-      reliability_notice: "Exact line matches are 100% reliable. Blended scores are more reliable than pure AI. AI-only scores are estimates. Use as a screening tool; human review recommended for formal decisions.",
-      timestamp: result.timestamp,
+      blended_scores: { overall_similarity_percent:result.similarity_percent, structure_similarity_percent:result.structure_similarity, token_overlap_percent:result.token_overlap },
+      algorithmic_scores: { token_similarity_jaccard_percent:result.algo_token_similarity, structural_match_percent:result.algo_structural_score, normalized_line_overlap_percent:result.algo_normalized_overlap, exact_matching_lines_count:result.matchingLines?.length ?? 0 },
+      ai_estimated_scores: { logic_similarity_percent:result.logic_similarity, human_written_percent:result.human_score ?? (100 - result.similarity_percent), ai_generated_likelihood_percent:result.ai_generated_likelihood ?? null, ai_run_count:result.ai_run_count ?? 1 },
+      summary:result.summary, findings:result.findings, matching_lines:{ count:result.matchingLines?.length ?? 0, lines:result.matchingLines ?? [] }, timestamp:result.timestamp,
     };
     const blob = new Blob([JSON.stringify(report, null, 2)], { type:"application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
+    const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url;
     const safeA = result.nameA.replace(/\.[^.]+$/, ""), safeB = result.nameB.replace(/\.[^.]+$/, "");
-    a.download = `plagiarism-${safeA}-vs-${safeB}.json`;
-    a.click(); URL.revokeObjectURL(url);
+    a.download = `plagiarism-${safeA}-vs-${safeB}.json`; a.click(); URL.revokeObjectURL(url);
   }
 
   const batchDoneCount = Object.keys(batchMatrix).length;
@@ -1009,10 +1386,28 @@ export default function App() {
           </div>
         )}
 
+        {/* Mode tabs — now 3 tabs */}
         <div className="mode-tabs">
           <button className={`mode-tab${mode === "pair" ? " active" : ""}`} onClick={() => { setMode("pair"); setError(""); }}>⇄ Pair Check</button>
-          <button className={`mode-tab${mode === "batch" ? " active" : ""}`} onClick={() => { setMode("batch"); setError(""); }}>📊 Batch Mode — Class Checker</button>
+          <button className={`mode-tab${mode === "otm" ? " active" : ""}`} onClick={() => { setMode("otm"); setError(""); }}
+            style={mode === "otm" ? {} : {}}>
+            🎯 One-to-Many
+          </button>
+          <button className={`mode-tab${mode === "batch" ? " active" : ""}`} onClick={() => { setMode("batch"); setError(""); }}>📊 Batch Matrix</button>
         </div>
+
+        {/* One-to-Many info banner */}
+        {mode === "otm" && (
+          <div style={{ background:"linear-gradient(135deg, rgba(13,164,235,0.08), rgba(0,229,160,0.04))", border:"1px solid rgba(13,164,235,0.25)", borderRadius:"10px", padding:"12px 16px", marginBottom:"1.5rem", fontFamily:"var(--mono)", fontSize:"11px", color:"#aaa", lineHeight:"1.8" }}>
+            <strong style={{ color:"#0da4eb" }}>🎯 One-to-Many Mode</strong> — Upload one base/source file (e.g. model solution or original code), then upload all student submissions. Every submission is compared against the source. Perfect for coding rounds, hackathons, and classroom grading.
+            <div style={{ marginTop:"6px", display:"flex", gap:"16px", flexWrap:"wrap" }}>
+              <span>✓ Live leaderboard ranked by similarity</span>
+              <span>✓ Risk flags: High / Medium / Low / Clean</span>
+              <span>✓ Click any row for full diff + findings</span>
+              <span>✓ Export CSV or JSON report</span>
+            </div>
+          </div>
+        )}
 
         {mode === "pair" && (<>
           <div className="upload-grid">
@@ -1053,10 +1448,8 @@ export default function App() {
                 <button className="glass-btn" onClick={downloadReport}>⬇ JSON Report</button>
               </div>
             </div>
-
             <div className="section-label">Algorithmic scores — 100% deterministic, fully reliable</div>
             <AlgoScores result={result} />
-
             <div className="section-label">Blended scores — AI + algorithmic</div>
             <div className="metrics">
               {[{ label:"Logic similarity", val:result.logic_similarity }, { label:"Structure match", val:result.structure_similarity }, { label:"Token overlap", val:result.token_overlap }].map(({ label, val }) => {
@@ -1064,7 +1457,6 @@ export default function App() {
                 return (<div className="metric" key={label}><div className="m-lbl">{label}</div><div className={`m-val c-${lv}`}>{Math.round(val)}%</div><div className="m-bar"><div className={`m-fill fill-${lv}`} style={{ width:`${val}%` }} /></div></div>);
               })}
             </div>
-
             <div className="section-label">Matching lines — {result.matchingLines.length} exact matches (100% algorithmically verified)</div>
             <div className="lines-box">
               {result.matchingLines.length === 0 ? <div className="no-lines">No exact line matches detected</div>
@@ -1076,12 +1468,9 @@ export default function App() {
                   </div>
                 ))}
             </div>
-
             {codeAContent && codeBContent && <InlineDiff codeAContent={codeAContent} codeBContent={codeBContent} fileAName={result.nameA} fileBName={result.nameB} />}
-
             <div className="section-label">Detailed findings</div>
             <div className="findings">{result.findings}</div>
-
             <div className="trust-banner" style={{ marginTop:"1.25rem" }}>
               <strong>How results are produced</strong> — hybrid approach for maximum reliability:
               <div className="trust-row">
@@ -1091,10 +1480,11 @@ export default function App() {
                 <div className="trust-item"><div className="trust-dot" style={{ background:"#b08dff" }} />Logic/human/AI scores — AI estimates, indicative only</div>
               </div>
             </div>
-
             <ReliabilityInfo result={result} />
           </div>)}
         </>)}
+
+        {mode === "otm" && <OneToManyMode />}
 
         {mode === "batch" && (<>
           <BatchDropZone files={batchFiles} onFiles={addBatchFiles} onRemoveFile={removeBatchFile} />
