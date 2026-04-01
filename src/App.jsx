@@ -782,9 +782,10 @@ function OneToManyMode() {
   const [running, setRunning]             = useState(false);
   const [progress, setProgress]           = useState({ done:0, total:0 });
   const [error, setError]                 = useState("");
-  const [modalItem, setModalItem]         = useState(null);
+  const [expandedRow, setExpandedRow]     = useState(null); // file.name or null
   const [sortBy, setSortBy]               = useState("pct_desc");
   const [dragSub, setDragSub]             = useState(false);
+  const expandedRef                       = useRef(null);
 
   // Load source file
   async function handleSourceFile(f) {
@@ -1058,71 +1059,169 @@ function OneToManyMode() {
             </div>
           </div>
 
-          {/* Table */}
-          <div style={{ background:"var(--surface)", border:"1px solid var(--border2)", borderRadius:"12px", overflow:"hidden", marginBottom:"1rem" }}>
-            <table className="otm-table">
-              <thead>
-                <tr>
-                  <th style={{ width:"40px" }}>#</th>
-                  <th>File</th>
-                  <th style={{ width:"130px" }}>Similarity</th>
-                  <th style={{ width:"100px" }}>Risk Level</th>
-                  <th style={{ width:"90px" }}>Matches</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedResults.map((item, i) => {
-                  const r = item.result;
-                  const pct = r.similarity_percent;
-                  const risk = getRiskLabel(pct);
-                  const lang = detectLanguage(item.file);
-                  const rankCls = i === 0 ? "rank-1" : i === 1 ? "rank-2" : i === 2 ? "rank-3" : "";
-                  return (
-                    <tr key={item.file.name}>
-                      <td>
-                        <div className="otm-row-inner" style={{ cursor:"default", paddingRight:0 }}>
-                          <span className={`otm-rank ${rankCls}`}>{i+1}</span>
-                        </div>
-                      </td>
-                      <td colSpan={4}>
-                        <div className="otm-row-inner" onClick={() => setModalItem(item)} style={{ display:"grid", gridTemplateColumns:"1fr 130px 100px 90px", gap:"10px", alignItems:"center" }}>
-                          <div className="otm-file-info">
-                            <div className="fname">{lang?.emoji} {item.file.name}</div>
-                            <div className="fmeta">{r.language_b} · {r.matchingLines?.length ?? 0} exact matches · click for details</div>
-                          </div>
-                          <div className="otm-bar-wrap">
-                            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:"3px" }}>
-                              <span style={{ fontFamily:"var(--mono)", fontSize:"10px", color:"var(--muted)" }}>{getVerdict(pct)}</span>
-                              <span className="otm-pct" style={{ fontSize:"13px", color:heatTextColor(pct) }}>{pct}%</span>
-                            </div>
-                            <div className="otm-bar-track">
-                              <div className="otm-bar-fill" style={{ width:`${pct}%`, background: pct >= 70 ? "#ff4f4f" : pct >= 40 ? "#f5a623" : pct >= 15 ? "#80d8ff" : "#00e5a0" }} />
-                            </div>
-                          </div>
-                          <div>
-                            <span className="otm-risk-badge" style={{ color:risk.color, background:risk.bg, borderColor:risk.border }}>{risk.label}</span>
-                          </div>
-                          <div style={{ fontFamily:"var(--mono)", fontSize:"12px", color:heatTextColor(r.algo_normalized_overlap ?? 0) }}>
-                            {r.matchingLines?.length ?? 0} lines
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-                {/* Loading rows for in-progress files */}
-                {running && loadingSet.size > 0 && [...loadingSet].map(idx => (
-                  <tr key={`loading-${idx}`}>
-                    <td colSpan={5}>
-                      <div className="otm-spinner-row">
-                        <div className="matrix-spinner" />
-                        <span>Analyzing {subFiles[idx]?.name}…</span>
+          {/* Column label strip */}
+          <div style={{ display:"grid", gridTemplateColumns:"36px 1fr 140px 110px 80px 28px", gap:"10px", padding:"0 14px", marginBottom:"6px" }}>
+            {["#","File","Similarity","Risk","Matches",""].map(h => (
+              <div key={h} style={{ fontFamily:"var(--mono)", fontSize:"9px", color:"var(--muted)", textTransform:"uppercase", letterSpacing:"1px" }}>{h}</div>
+            ))}
+          </div>
+
+          {/* Accordion rows */}
+          <div style={{ display:"flex", flexDirection:"column", gap:"6px", marginBottom:"1rem" }}>
+            {sortedResults.map((item, i) => {
+              const r = item.result;
+              const pct = r.similarity_percent;
+              const risk = getRiskLabel(pct);
+              const lang = detectLanguage(item.file);
+              const rankCls = i === 0 ? "rank-1" : i === 1 ? "rank-2" : i === 2 ? "rank-3" : "";
+              const isOpen = expandedRow === item.file.name;
+
+              return (
+                <div key={item.file.name} style={{ background:"var(--surface)", border:`1px solid ${isOpen ? "rgba(0,229,160,0.3)" : "var(--border)"}`, borderRadius:"10px", overflow:"hidden", transition:"border-color 0.2s" }}>
+                  {/* ── Summary row (always visible, click to toggle) ── */}
+                  <div
+                    onClick={() => {
+                      setExpandedRow(prev => {
+                        const next = prev === item.file.name ? null : item.file.name;
+                        if (next) setTimeout(() => expandedRef.current?.scrollIntoView({ behavior:"smooth", block:"nearest" }), 60);
+                        return next;
+                      });
+                    }}
+                    style={{ display:"grid", gridTemplateColumns:"36px 1fr 140px 110px 80px 28px", gap:"10px", alignItems:"center", padding:"10px 14px", cursor:"pointer", userSelect:"none", transition:"background 0.15s", background: isOpen ? "rgba(0,229,160,0.04)" : "transparent" }}
+                    onMouseEnter={e => { if (!isOpen) e.currentTarget.style.background = "rgba(255,255,255,0.03)"; }}
+                    onMouseLeave={e => { if (!isOpen) e.currentTarget.style.background = "transparent"; }}
+                  >
+                    {/* Rank */}
+                    <span className={`otm-rank ${rankCls}`} style={{ textAlign:"center" }}>{i+1}</span>
+
+                    {/* File info */}
+                    <div className="otm-file-info">
+                      <div className="fname">{lang?.emoji} {item.file.name}</div>
+                      <div className="fmeta">{r.language_b} · {r.matchingLines?.length ?? 0} exact matches</div>
+                    </div>
+
+                    {/* Bar */}
+                    <div className="otm-bar-wrap">
+                      <div style={{ display:"flex", justifyContent:"space-between", marginBottom:"3px" }}>
+                        <span style={{ fontFamily:"var(--mono)", fontSize:"10px", color:"var(--muted)" }}>{getVerdict(pct)}</span>
+                        <span style={{ fontFamily:"var(--mono)", fontSize:"13px", fontWeight:600, color:heatTextColor(pct) }}>{pct}%</span>
                       </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      <div className="otm-bar-track">
+                        <div className="otm-bar-fill" style={{ width:`${pct}%`, background: pct >= 70 ? "#ff4f4f" : pct >= 40 ? "#f5a623" : pct >= 15 ? "#80d8ff" : "#00e5a0" }} />
+                      </div>
+                    </div>
+
+                    {/* Risk badge */}
+                    <span className="otm-risk-badge" style={{ color:risk.color, background:risk.bg, borderColor:risk.border }}>{risk.label}</span>
+
+                    {/* Matching lines */}
+                    <span style={{ fontFamily:"var(--mono)", fontSize:"12px", color:heatTextColor(pct), textAlign:"right" }}>{r.matchingLines?.length ?? 0}</span>
+
+                    {/* Chevron */}
+                    <span style={{ color:"var(--muted)", fontSize:"12px", textAlign:"center", transition:"transform 0.2s", transform: isOpen ? "rotate(180deg)" : "rotate(0deg)", display:"inline-block" }}>▾</span>
+                  </div>
+
+                  {/* ── Expanded detail panel ── */}
+                  {isOpen && (
+                    <div ref={expandedRef} style={{ borderTop:"1px solid var(--border2)", padding:"1.25rem 1.5rem", background:"rgba(0,0,0,0.2)" }}>
+                      {/* Compact header inside panel */}
+                      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:"1.25rem", flexWrap:"wrap", gap:"8px" }}>
+                        <div style={{ fontFamily:"var(--mono)", fontSize:"12px", color:"var(--accent)" }}>
+                          🔑 {sourceFile?.name} <span style={{ color:"var(--muted)" }}>vs</span> 📄 {item.file.name}
+                        </div>
+                        <button
+                          className="glass-btn"
+                          style={{ padding:"5px 12px", fontSize:"11px" }}
+                          onClick={(e) => { e.stopPropagation(); setExpandedRow(null); }}
+                        >⊟ Collapse</button>
+                      </div>
+
+                      {/* Score summary row — compact 4-up grid */}
+                      <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:"8px", marginBottom:"1.25rem" }}>
+                        {[
+                          { label:"Similarity", val:`${r.similarity_percent}%`, color:heatTextColor(r.similarity_percent) },
+                          { label:"Logic", val:`${r.logic_similarity}%`, color:heatTextColor(r.logic_similarity) },
+                          { label:"Structure", val:`${r.structure_similarity}%`, color:heatTextColor(r.structure_similarity) },
+                          { label:"Token Overlap", val:`${r.token_overlap}%`, color:heatTextColor(r.token_overlap) },
+                        ].map(({ label, val, color }) => (
+                          <div key={label} style={{ background:"rgba(255,255,255,0.04)", border:"1px solid var(--border)", borderRadius:"8px", padding:"10px 12px", textAlign:"center" }}>
+                            <div style={{ fontFamily:"var(--mono)", fontSize:"18px", fontWeight:600, color }}>{val}</div>
+                            <div style={{ fontFamily:"var(--mono)", fontSize:"9px", color:"var(--muted)", marginTop:"3px", textTransform:"uppercase", letterSpacing:"0.8px" }}>{label}</div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Algo scores strip */}
+                      <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:"6px", marginBottom:"1.25rem" }}>
+                        {[
+                          { label:"Token Sim (Jaccard)", val:r.algo_token_similarity },
+                          { label:"Structural Match", val:r.algo_structural_score },
+                          { label:"Norm. Overlap", val:r.algo_normalized_overlap },
+                        ].map(({ label, val }) => (
+                          <div key={label} style={{ background:"rgba(0,229,160,0.04)", border:"1px solid rgba(0,229,160,0.12)", borderRadius:"7px", padding:"8px 10px" }}>
+                            <div style={{ fontFamily:"var(--mono)", fontSize:"9px", color:"var(--muted)", textTransform:"uppercase", letterSpacing:"0.8px", marginBottom:"3px" }}>{label}</div>
+                            <div style={{ fontFamily:"var(--mono)", fontSize:"16px", fontWeight:600, color:"var(--accent)" }}>{val ?? "—"}%</div>
+                            <div style={{ fontFamily:"var(--mono)", fontSize:"9px", color:"var(--muted)", marginTop:"1px" }}>100% algorithmic</div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Summary text */}
+                      {r.summary && (
+                        <div style={{ background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:"8px", padding:"10px 14px", fontFamily:"var(--mono)", fontSize:"12px", color:"var(--muted)", lineHeight:"1.7", marginBottom:"1.25rem" }}>
+                          <span style={{ color:"var(--text)", fontWeight:600 }}>Summary: </span>{r.summary}
+                        </div>
+                      )}
+
+                      {/* Matching lines */}
+                      <div className="section-label" style={{ marginBottom:"8px" }}>
+                        Exact matching lines — {r.matchingLines?.length ?? 0} (100% verified)
+                      </div>
+                      <div className="lines-box" style={{ maxHeight:"160px", marginBottom:"1.25rem" }}>
+                        {!r.matchingLines?.length
+                          ? <div className="no-lines">No exact line matches detected</div>
+                          : r.matchingLines.slice(0, 60).map((line, idx) => (
+                            <div key={idx} className="line-row" style={{ background:"rgba(255,79,79,0.10)" }}>
+                              <span className="ln">{idx+1}</span>
+                              <span className="lc" style={{ color:"#ff8080" }}>{line}</span>
+                              <CopyButton text={line} />
+                            </div>
+                          ))}
+                      </div>
+
+                      {/* Diff */}
+                      <InlineDiff
+                        codeAContent={sourceContent}
+                        codeBContent={item.content}
+                        fileAName={sourceFile?.name}
+                        fileBName={item.file.name}
+                      />
+
+                      {/* Findings */}
+                      {r.findings && (<>
+                        <div className="section-label" style={{ marginBottom:"8px" }}>Detailed findings</div>
+                        <div className="findings" style={{ marginBottom:"1rem" }}>{r.findings}</div>
+                      </>)}
+
+                      {/* Collapse button at bottom */}
+                      <button
+                        className="glass-btn"
+                        style={{ width:"100%", justifyContent:"center", marginTop:"4px" }}
+                        onClick={() => setExpandedRow(null)}
+                      >⊟ Collapse details</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* Loading rows for in-progress files */}
+            {running && loadingSet.size > 0 && [...loadingSet].map(idx => (
+              <div key={`loading-${idx}`} style={{ display:"flex", alignItems:"center", gap:"10px", padding:"12px 14px", background:"var(--surface)", border:"1px solid var(--border)", borderRadius:"10px", fontFamily:"var(--mono)", fontSize:"11px", color:"var(--muted)" }}>
+                <div className="matrix-spinner" />
+                <span>Analyzing {subFiles[idx]?.name}…</span>
+              </div>
+            ))}
           </div>
 
           {/* Export row */}
@@ -1132,28 +1231,6 @@ function OneToManyMode() {
               <button className="glass-btn" onClick={exportJSON}>⬇ Export JSON</button>
             </div>
           )}
-        </div>
-      )}
-
-      {/* Detail modal */}
-      {modalItem && (
-        <div className="modal-overlay" onClick={() => setModalItem(null)}>
-          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
-            <button className="modal-close" onClick={() => setModalItem(null)}>✕ Close</button>
-            <div className="modal-title">
-              🔑 {sourceFile?.name} ↔ 📄 {modalItem.file.name}
-              <span style={{ marginLeft:"10px", padding:"2px 8px", borderRadius:"6px", fontSize:"10px", ...(() => { const r = getRiskLabel(modalItem.result.similarity_percent); return { background:r.bg, color:r.color, border:`1px solid ${r.border}` }; })() }}>
-                {getRiskLabel(modalItem.result.similarity_percent).label}
-              </span>
-            </div>
-            <ResultDetail
-              result={modalItem.result}
-              fileAName={sourceFile?.name}
-              fileBName={modalItem.file.name}
-              codeAContent={sourceContent}
-              codeBContent={modalItem.content}
-            />
-          </div>
         </div>
       )}
     </div>
