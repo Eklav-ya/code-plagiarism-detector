@@ -4,8 +4,6 @@ export default async function handler(req, res) {
   }
 
   const apiKey = process.env.GROQ_API_KEY;
-  
-  // ADD THIS ↓
   console.log("KEY EXISTS:", !!apiKey);
   console.log("BODY:", JSON.stringify(req.body));
 
@@ -14,6 +12,10 @@ export default async function handler(req, res) {
   }
 
   try {
+    // ADD THESE TWO LINES ↓
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 25000);
+
     const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -21,7 +23,10 @@ export default async function handler(req, res) {
         "Authorization": `Bearer ${apiKey}`,
       },
       body: JSON.stringify(req.body),
+      signal: controller.signal,  // ← ADD THIS
     });
+
+    clearTimeout(timeout);  // ← ADD THIS
 
     const data = await response.json();
 
@@ -31,7 +36,6 @@ export default async function handler(req, res) {
 
     return res.status(200).json(data);
   } catch (err) {
-    // REPLACE THE CATCH WITH THIS ↓
     console.log("FETCH ERROR:", err.message, err.cause?.message);
     return res.status(500).json({ 
       error: err.message,

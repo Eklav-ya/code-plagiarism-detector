@@ -28,7 +28,7 @@
   "regions": ["iad1"],
   "functions": {
     "pages/api/check.js": {
-      "maxDuration": 30
+      "maxDuration": 60
     }
   }
 }
