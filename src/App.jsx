@@ -20,9 +20,10 @@ function normalizeCode(code) {
     .toLowerCase();
 }
 
+// BUG FIX #7: raised threshold from >4 to >8 to avoid counting trivial lines like "{", "}", "return;"
 function getMatchingLines(codeA, codeB) {
-  const rawA = codeA.split("\n").map(l => l.trim()).filter(l => l.length > 4);
-  const rawB = new Set(codeB.split("\n").map(l => l.trim()).filter(l => l.length > 4));
+  const rawA = codeA.split("\n").map(l => l.trim()).filter(l => l.length > 8);
+  const rawB = new Set(codeB.split("\n").map(l => l.trim()).filter(l => l.length > 8));
   return rawA.filter(l => rawB.has(l));
 }
 
@@ -100,6 +101,8 @@ function detectLanguage(file) {
   return LANG_MAP[ext] || { label: ext?.toUpperCase() || "Unknown", emoji: "📄" };
 }
 
+// BUG FIX #5: correct line numbers in diff — track actual source line numbers separately
+// instead of using the padded diff-array index which includes empty placeholder rows
 function computeDiff(linesA, linesB) {
   const a = linesA.slice(0, 400), b = linesB.slice(0, 400);
   const n = a.length, m = b.length;
@@ -111,11 +114,11 @@ function computeDiff(linesA, linesB) {
   let i = n, j = m;
   while (i > 0 || j > 0) {
     if (i > 0 && j > 0 && a[i-1].trim() === b[j-1].trim()) {
-      diffA.unshift({ type:"same",    line:a[i-1] }); diffB.unshift({ type:"same",  line:b[j-1] }); i--; j--;
+      diffA.unshift({ type: "same",    line: a[i-1], ln: i }); diffB.unshift({ type: "same",  line: b[j-1], ln: j }); i--; j--;
     } else if (j > 0 && (i === 0 || dp[i][j-1] >= dp[i-1][j])) {
-      diffB.unshift({ type:"added",   line:b[j-1] }); diffA.unshift({ type:"empty", line:"" }); j--;
+      diffB.unshift({ type: "added",   line: b[j-1], ln: j }); diffA.unshift({ type: "empty", line: "",     ln: null }); j--;
     } else {
-      diffA.unshift({ type:"removed", line:a[i-1] }); diffB.unshift({ type:"empty", line:"" }); i--;
+      diffA.unshift({ type: "removed", line: a[i-1], ln: i }); diffB.unshift({ type: "empty", line: "",     ln: null }); i--;
     }
   }
   return { diffA, diffB };
@@ -237,12 +240,11 @@ function heatTextColor(pct) {
   return "#00e5a0";
 }
 
-// ─── getRiskLabel: used in One-to-Many leaderboard ───────────────────────────
 function getRiskLabel(pct) {
-  if (pct >= 70) return { label: "HIGH RISK", color: "#ff4f4f", bg: "rgba(255,79,79,0.15)", border: "rgba(255,79,79,0.4)" };
-  if (pct >= 40) return { label: "MEDIUM RISK", color: "#f5a623", bg: "rgba(245,166,35,0.12)", border: "rgba(245,166,35,0.4)" };
-  if (pct >= 15) return { label: "LOW RISK", color: "#80d8ff", bg: "rgba(128,216,255,0.1)", border: "rgba(128,216,255,0.3)" };
-  return { label: "CLEAN", color: "#00e5a0", bg: "rgba(0,229,160,0.08)", border: "rgba(0,229,160,0.3)" };
+  if (pct >= 70) return { label: "HIGH RISK",   color: "#ff4f4f", bg: "rgba(255,79,79,0.15)",   border: "rgba(255,79,79,0.4)" };
+  if (pct >= 40) return { label: "MEDIUM RISK", color: "#f5a623", bg: "rgba(245,166,35,0.12)",  border: "rgba(245,166,35,0.4)" };
+  if (pct >= 15) return { label: "LOW RISK",    color: "#80d8ff", bg: "rgba(128,216,255,0.1)",  border: "rgba(128,216,255,0.3)" };
+  return             { label: "CLEAN",       color: "#00e5a0", bg: "rgba(0,229,160,0.08)",   border: "rgba(0,229,160,0.3)" };
 }
 
 const CSS = `
@@ -424,8 +426,6 @@ const CSS = `
   .pill-high   { color:var(--danger); border-color:rgba(255,79,79,0.4);   background:rgba(255,79,79,0.08); }
   .stroke-none { stroke:var(--safe); } .stroke-low { stroke:#80d8ff; } .stroke-medium { stroke:var(--warn); } .stroke-high { stroke:var(--danger); }
   .fill-none { background:var(--safe); } .fill-low { background:#80d8ff; } .fill-medium { background:var(--warn); } .fill-high { background:var(--danger); }
-
-  /* ── ONE-TO-MANY STYLES ─────────────────────────────────────────────────── */
   .otm-layout { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:1.5rem; }
   @media(max-width:640px) { .otm-layout { grid-template-columns:1fr; } }
   .otm-source-zone { border:2px solid rgba(0,229,160,0.35); border-radius:12px; padding:1.5rem; background:rgba(0,229,160,0.04); position:relative; }
@@ -433,7 +433,6 @@ const CSS = `
   .otm-source-label::before { content:""; display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--accent); box-shadow:0 0 8px var(--accent); }
   .otm-submissions-zone { border:1.5px dashed var(--border2); border-radius:12px; padding:1.5rem; background:rgba(20,20,30,0.6); position:relative; }
   .otm-submissions-label { font-family:var(--mono); font-size:10px; letter-spacing:2px; text-transform:uppercase; color:var(--muted); margin-bottom:10px; display:flex; align-items:center; gap:6px; }
-  .otm-submissions-zone input { position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%; z-index:1; }
   .otm-sub-drop-content { text-align:center; pointer-events:none; }
   .otm-file-list { margin-top:10px; display:flex; flex-direction:column; gap:6px; max-height:200px; overflow-y:auto; position:relative; z-index:2; }
   .otm-file-list::-webkit-scrollbar { width:3px; }
@@ -442,42 +441,21 @@ const CSS = `
   .otm-file-row .file-name { flex:1; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .otm-file-row .file-remove { background:none; border:none; color:var(--muted); cursor:pointer; font-size:11px; padding:0; line-height:1; transition:color 0.15s; flex-shrink:0; }
   .otm-file-row .file-remove:hover { color:var(--danger); }
-
-  /* Leaderboard */
   .otm-leaderboard { margin-bottom:1.5rem; }
   .otm-summary-row { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:1.25rem; }
   @media(max-width:600px) { .otm-summary-row { grid-template-columns:1fr 1fr; } }
   .otm-summary-card { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:1rem 1.1rem; text-align:center; }
   .otm-summary-card .s-val { font-family:var(--mono); font-size:24px; font-weight:600; line-height:1; }
   .otm-summary-card .s-lbl { font-family:var(--mono); font-size:10px; color:var(--muted); margin-top:4px; letter-spacing:1px; text-transform:uppercase; }
-  .otm-table { width:100%; border-collapse:collapse; font-family:var(--mono); font-size:12px; }
-  .otm-table thead tr { border-bottom:1px solid var(--border2); }
-  .otm-table th { padding:8px 12px; text-align:left; font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--muted); font-weight:500; }
-  .otm-table td { padding:0; border-bottom:1px solid rgba(255,255,255,0.04); }
-  .otm-table tr:last-child td { border-bottom:none; }
-  .otm-row-inner { display:flex; align-items:center; gap:10px; padding:10px 12px; cursor:pointer; transition:background 0.15s; border-radius:6px; }
-  .otm-row-inner:hover { background:rgba(255,255,255,0.04); }
-  .otm-rank { font-size:11px; color:var(--muted); min-width:24px; text-align:center; flex-shrink:0; }
-  .otm-rank.rank-1 { color:#ffd700; font-weight:700; font-size:14px; }
-  .otm-rank.rank-2 { color:#b08dff; font-weight:700; }
-  .otm-rank.rank-3 { color:#f5a623; font-weight:700; }
-  .otm-file-info { flex:1; min-width:0; }
-  .otm-file-info .fname { color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:220px; }
-  .otm-file-info .fmeta { font-size:10px; color:var(--muted); margin-top:2px; }
   .otm-bar-wrap { width:120px; flex-shrink:0; }
   .otm-bar-track { height:5px; background:var(--border2); border-radius:3px; overflow:hidden; }
   .otm-bar-fill { height:100%; border-radius:3px; transition:width 0.8s ease; }
-  .otm-pct { min-width:40px; text-align:right; font-weight:600; flex-shrink:0; }
   .otm-risk-badge { flex-shrink:0; font-size:9px; font-weight:700; letter-spacing:0.8px; padding:2px 8px; border-radius:10px; border:1px solid; white-space:nowrap; }
-  .otm-spinner-row { display:flex; align-items:center; gap:10px; padding:10px 12px; font-family:var(--mono); font-size:11px; color:var(--muted); }
-  .otm-progress-label { margin-bottom:10px; font-family:var(--mono); font-size:12px; color:var(--muted); display:flex; justify-content:space-between; }
   .otm-export-row { display:flex; gap:8px; flex-wrap:wrap; margin-top:1rem; margin-bottom:1.5rem; }
-
-  /* Source file badge in leaderboard header */
   .otm-source-badge { display:inline-flex; align-items:center; gap:6px; background:rgba(0,229,160,0.1); border:1px solid rgba(0,229,160,0.3); border-radius:8px; padding:6px 12px; font-family:var(--mono); font-size:11px; color:var(--accent); margin-bottom:1rem; }
 `;
 
-// ─── Shared sub-components ─────────────────────────────────────────────────────
+// ─── Shared sub-components ────────────────────────────────────────────────────
 function DropZone({ label, file, onFile, onRemove }) {
   const [drag, setDrag] = useState(false);
   const [showPaste, setShowPaste] = useState(false);
@@ -577,6 +555,7 @@ function CopyButton({ text }) {
   );
 }
 
+// BUG FIX #5: use row.ln (real source line number stored in computeDiff) instead of array index
 function InlineDiff({ codeAContent, codeBContent, fileAName, fileBName }) {
   const [showDiff, setShowDiff] = useState(true);
   const diff = useMemo(() => {
@@ -600,7 +579,7 @@ function InlineDiff({ codeAContent, codeBContent, fileAName, fileBName }) {
         <div className="diff-col">
           {diff.diffA.map((row, i) => (
             <div key={i} className={`diff-line ${row.type}`}>
-              <span className="diff-ln">{row.type !== "empty" ? i + 1 : ""}</span>
+              <span className="diff-ln">{row.ln ?? ""}</span>
               <span className="diff-sign">{row.type === "removed" ? "−" : " "}</span>
               <span className="diff-text">{row.line}</span>
             </div>
@@ -609,7 +588,7 @@ function InlineDiff({ codeAContent, codeBContent, fileAName, fileBName }) {
         <div className="diff-col">
           {diff.diffB.map((row, i) => (
             <div key={i} className={`diff-line ${row.type}`}>
-              <span className="diff-ln">{row.type !== "empty" ? i + 1 : ""}</span>
+              <span className="diff-ln">{row.ln ?? ""}</span>
               <span className="diff-sign">{row.type === "added" ? "+" : " "}</span>
               <span className="diff-text">{row.line}</span>
             </div>
@@ -777,17 +756,18 @@ function OneToManyMode() {
   const [sourceFile, setSourceFile]       = useState(null);
   const [sourceContent, setSourceContent] = useState("");
   const [subFiles, setSubFiles]           = useState([]);
-  const [results, setResults]             = useState([]);  // [{file, result, content}]
+  const [results, setResults]             = useState([]);
   const [loadingSet, setLoadingSet]       = useState(new Set());
   const [running, setRunning]             = useState(false);
   const [progress, setProgress]           = useState({ done:0, total:0 });
   const [error, setError]                 = useState("");
-  const [expandedRow, setExpandedRow]     = useState(null); // file.name or null
+  const [expandedRow, setExpandedRow]     = useState(null);
   const [sortBy, setSortBy]               = useState("pct_desc");
   const [dragSub, setDragSub]             = useState(false);
-  const expandedRef                       = useRef(null);
 
-  // Load source file
+  // BUG FIX #6: use a Map of refs keyed by filename instead of a single shared ref
+  const expandedRefs = useRef({});
+
   async function handleSourceFile(f) {
     setSourceFile(f);
     const content = await readFile(f);
@@ -795,7 +775,6 @@ function OneToManyMode() {
     setResults([]);
   }
 
-  // Add submission files (dedup by name)
   function addSubFiles(newFiles) {
     setSubFiles(prev => {
       const ex = new Set(prev.map(f => f.name));
@@ -825,9 +804,7 @@ function OneToManyMode() {
         setLoadingSet(prev => new Set([...prev, i]));
         try {
           const subContent = await readFile(f);
-          // Use a fake File wrapper so analyzeFilePair gets names right
-          const fakeSource = { name: sourceFile.name };
-          const res = await analyzeFilePair(fakeSource, { name: f.name }, sourceContent, subContent);
+          const res = await analyzeFilePair({ name: sourceFile.name }, { name: f.name }, sourceContent, subContent);
           allResults[i] = { file: f, result: res, content: subContent };
         } catch(e) {
           allResults[i] = {
@@ -846,8 +823,8 @@ function OneToManyMode() {
         }
         setLoadingSet(prev => { const s = new Set(prev); s.delete(i); return s; });
         setProgress(prev => ({ ...prev, done: prev.done + 1 }));
-        // Progressive update
-        setResults(allResults.filter(Boolean).map(r => r));
+        // BUG FIX #4: removed the pointless .map(r => r) — just filter directly
+        setResults(allResults.filter(Boolean));
       }
     }
 
@@ -856,7 +833,6 @@ function OneToManyMode() {
     setRunning(false);
   }
 
-  // Sort results
   const sortedResults = useMemo(() => {
     const r = [...results];
     if (sortBy === "pct_desc") r.sort((a,b) => b.result.similarity_percent - a.result.similarity_percent);
@@ -865,88 +841,89 @@ function OneToManyMode() {
     return r;
   }, [results, sortBy]);
 
-  // Summary stats
   const doneCount  = results.length;
   const highRisk   = results.filter(r => r.result.similarity_percent >= 70).length;
   const medRisk    = results.filter(r => r.result.similarity_percent >= 40 && r.result.similarity_percent < 70).length;
   const cleanCount = results.filter(r => r.result.similarity_percent < 15).length;
   const avgPct     = doneCount ? Math.round(results.reduce((s,r) => s + r.result.similarity_percent, 0) / doneCount) : 0;
 
-  //Export leaderboard as PDF
-  function exportPDFOneToMany(results, sourceFileName) {
-  const doc = new jsPDF();
-  doc.setFont("Courier", "normal");
-  doc.setFontSize(12);
+  // BUG FIX #1 + #2 + #3: fully rewritten — correctly accesses item.result,
+  // computes stats internally (not from outer scope), uses sortedResults for the list
+  function exportPDFOneToMany() {
+    if (!results.length) return;
+    const doc = new jsPDF();
+    let y = 10;
 
-  let y = 10;
+    const addLine = (text, opts = {}) => {
+      doc.setFont("Courier", opts.bold ? "Bold" : "Normal");
+      doc.setFontSize(opts.size || 10);
+      const lines = doc.splitTextToSize(String(text), 180);
+      lines.forEach(line => {
+        if (y > 280) { doc.addPage(); y = 10; }
+        doc.text(line, 10, y);
+        y += opts.gap || 6;
+      });
+      doc.setFont("Courier", "Normal");
+      doc.setFontSize(10);
+    };
+    const addDivider = () => { doc.setDrawColor(180, 180, 180); doc.line(10, y, 200, y); y += 5; };
 
-  const addLine = (text, opts = {}) => {
-    doc.setFont("Courier", opts.bold ? "Bold" : "Normal");
-    doc.setFontSize(opts.size || 10);
-    const lines = doc.splitTextToSize(String(text), 180);
-    lines.forEach(line => {
-      if (y > 280) { doc.addPage(); y = 10; }
-      doc.text(line, 10, y);
-      y += opts.gap || 6;
+    addLine("CODE PLAGIARISM REPORT — ONE TO MANY", { bold: true, size: 14, gap: 8 });
+    addLine(`Generated  : ${new Date().toLocaleString()}`, { size: 9, gap: 5 });
+    addLine(`Source File: ${sourceFile?.name ?? "Unknown"}`, { size: 9, gap: 5 });
+    addLine(`Powered by : LLaMA 3.3 70B (Groq API) + Algorithmic Analysis`, { size: 9, gap: 5 });
+    addDivider();
+
+    // Compute stats from current results (not outer scope vars which may be stale)
+    const pdfHighRisk   = results.filter(item => item.result.similarity_percent >= 70).length;
+    const pdfMedRisk    = results.filter(item => item.result.similarity_percent >= 40 && item.result.similarity_percent < 70).length;
+    const pdfCleanCount = results.filter(item => item.result.similarity_percent < 15).length;
+    const pdfAvgPct     = results.length
+      ? Math.round(results.reduce((s, item) => s + item.result.similarity_percent, 0) / results.length)
+      : 0;
+
+    addLine("SUMMARY", { bold: true, size: 11, gap: 7 });
+    addLine(`Total submissions : ${results.length}`,     { gap: 5 });
+    addLine(`High risk  (≥70%) : ${pdfHighRisk}`,        { gap: 5 });
+    addLine(`Medium risk(≥40%) : ${pdfMedRisk}`,         { gap: 5 });
+    addLine(`Clean      (<15%) : ${pdfCleanCount}`,      { gap: 5 });
+    addLine(`Avg similarity    : ${pdfAvgPct}%`,         { gap: 5 });
+    y += 4;
+    addDivider();
+
+    addLine("RESULTS (sorted highest similarity first)", { bold: true, size: 11, gap: 7 });
+
+    // Use sortedResults so PDF order matches what user sees on screen
+    sortedResults.forEach((item, index) => {
+      const r = item.result; // ← correct: access nested result object
+
+      if (y > 255) { doc.addPage(); y = 10; }
+
+      addLine(`${index + 1}. ${r.nameB ?? item.file.name}`, { bold: true, size: 10, gap: 6 });
+      addLine(`   Verdict        : ${getVerdict(r.similarity_percent)}`, { gap: 5 });
+      addLine(`   Similarity     : ${r.similarity_percent}%`, { gap: 5 });
+      addLine(`   Logic          : ${r.logic_similarity}%  |  Structure: ${r.structure_similarity}%  |  Token: ${r.token_overlap}%`, { gap: 5 });
+      addLine(`   Token sim (algo)   : ${r.algo_token_similarity ?? "N/A"}%`, { gap: 5 });
+      addLine(`   Structural (algo)  : ${r.algo_structural_score ?? "N/A"}%`, { gap: 5 });
+      addLine(`   Norm overlap (algo): ${r.algo_normalized_overlap ?? "N/A"}%`, { gap: 5 });
+      addLine(`   Exact matches  : ${r.matchingLines?.length ?? 0} lines`, { gap: 5 });
+      addLine(`   Language       : ${r.language_b ?? "Unknown"}`, { gap: 5 });
+      if (r.summary) addLine(`   Summary: ${r.summary}`, { size: 9, gap: 5 });
+      if (r.findings) addLine(`   Findings: ${r.findings}`, { size: 9, gap: 5 });
+      y += 4;
     });
-    doc.setFont("Courier", "Normal");
-    doc.setFontSize(10);
-  };
 
-  const addDivider = () => {
-    doc.setDrawColor(180, 180, 180);
-    doc.line(10, y, 200, y);
-    y += 5;
-  };
+    addDivider();
+    addLine("RELIABILITY NOTICE", { bold: true, size: 9, gap: 6 });
+    addLine("Exact line matches are 100% algorithmically verified and fully reliable.", { size: 9, gap: 5 });
+    addLine("Blended scores (60% AI + 40% algorithmic) are more reliable than pure AI estimates.", { size: 9, gap: 5 });
+    addLine("AI-only scores are indicative estimates — not guaranteed accurate.", { size: 9, gap: 5 });
 
-  addLine("CODE PLAGIARISM REPORT — ONE TO MANY", { bold: true, size: 14, gap: 8 });
-  addLine(`Generated  : ${new Date().toLocaleString()}`, { size: 9, gap: 5 });
-  addLine(`Source File: ${sourceFileName}`, { size: 9, gap: 5 });
-  addDivider();
+    const safeName = (sourceFile?.name ?? "source").replace(/\.[^.]+$/, "");
+    doc.save(`plagiarism-one-to-many-${safeName}.pdf`);
+  }
 
-  // Summary stats
-  const highRisk   = results.filter(item => item.result.similarity_percent >= 70).length;
-  const medRisk    = results.filter(item => item.result.similarity_percent >= 40 && item.result.similarity_percent < 70).length;
-  const cleanCount = results.filter(item => item.result.similarity_percent < 15).length;
-  const avgPct     = results.length
-    ? Math.round(results.reduce((s, item) => s + item.result.similarity_percent, 0) / results.length)
-    : 0;
-
-  addLine("SUMMARY", { bold: true, size: 11, gap: 7 });
-  addLine(`Total submissions : ${results.length}`, { gap: 5 });
-  addLine(`High risk (≥70%)  : ${highRisk}`, { gap: 5 });
-  addLine(`Medium risk (≥40%): ${medRisk}`, { gap: 5 });
-  addLine(`Clean (<15%)      : ${cleanCount}`, { gap: 5 });
-  addLine(`Average similarity: ${avgPct}%`, { gap: 5 });
-  y += 4;
-  addDivider();
-
-  addLine("RESULTS (sorted by similarity)", { bold: true, size: 11, gap: 7 });
-
-  // ✅ Correctly destructure item.result
-  results.forEach((item, index) => {
-    const r = item.result;   // <-- this was the missing step
-
-    if (y > 255) { doc.addPage(); y = 10; }
-
-    addLine(
-      `${index + 1}. ${r.nameB ?? item.file.name}`,
-      { bold: true, size: 10, gap: 6 }
-    );
-    addLine(`   Similarity : ${r.similarity_percent}% — ${getVerdict(r.similarity_percent)}`, { gap: 5 });
-    addLine(`   Structure  : ${r.structure_similarity}%  |  Token overlap: ${r.token_overlap}%`, { gap: 5 });
-    addLine(`   Exact matches: ${r.matchingLines?.length ?? 0} lines`, { gap: 5 });
-
-    if (r.summary) {
-      addLine(`   Summary: ${r.summary}`, { size: 9, gap: 5 });
-    }
-    y += 3;
-  });
-
-  doc.save(`plagiarism-one-to-many-${sourceFileName}.pdf`);
-}
-  
-  // Export JSON
+  // BUG FIX #3: exportJSON now uses sortedResults consistently and fresh stats
   function exportJSON() {
     if (!results.length) return;
     const report = {
@@ -955,22 +932,25 @@ function OneToManyMode() {
       generated_at: new Date().toLocaleString(),
       summary: { total: results.length, high_risk: highRisk, medium_risk: medRisk, clean: cleanCount, avg_similarity: avgPct },
       results: sortedResults.map((item, i) => ({
-        rank: i+1, file: item.file.name, similarity_percent: item.result.similarity_percent,
-        verdict: getVerdict(item.result.similarity_percent), ...item.result
-      }))
+        rank: i + 1,
+        file: item.file.name,
+        similarity_percent: item.result.similarity_percent,
+        verdict: getVerdict(item.result.similarity_percent),
+        ...item.result,
+      })),
     };
-    const blob = new Blob([JSON.stringify(report, null, 2)], { type:"application/json" });
+    const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-    const a   = document.createElement("a"); a.href = url;
+    const a = document.createElement("a");
+    a.href = url;
     a.download = `one-to-many-report-${sourceFile?.name ?? "source"}.json`;
-    a.click(); URL.revokeObjectURL(url);
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   return (
     <div>
-      {/* Upload layout */}
       <div className="otm-layout">
-        {/* Source file */}
         <div className="otm-source-zone">
           <div className="otm-source-label">Base / Source Code</div>
           {!sourceFile ? (
@@ -1000,7 +980,6 @@ function OneToManyMode() {
           )}
         </div>
 
-        {/* Submission files */}
         <div className="otm-submissions-zone">
           <div className="otm-submissions-label">Student Submissions</div>
           <div
@@ -1057,7 +1036,6 @@ function OneToManyMode() {
           : `→ Run One-to-Many Analysis (${subFiles.length} submission${subFiles.length !== 1 ? "s" : ""})`}
       </button>
 
-      {/* Progress bar */}
       {running && progress.total > 0 && (
         <div className="batch-progress" style={{ marginTop:"-1.5rem", marginBottom:"1.5rem" }}>
           <div className="batch-status">
@@ -1070,15 +1048,12 @@ function OneToManyMode() {
         </div>
       )}
 
-      {/* Leaderboard */}
       {results.length > 0 && (
         <div className="otm-leaderboard">
-          {/* Source badge */}
           <div className="otm-source-badge">
             🔑 Source: {sourceFile?.name} · {doneCount} submission{doneCount !== 1 ? "s" : ""} analyzed
           </div>
 
-          {/* Summary row */}
           <div className="otm-summary-row">
             <div className="otm-summary-card">
               <div className="s-val" style={{ color:"var(--danger)" }}>{highRisk}</div>
@@ -1098,33 +1073,28 @@ function OneToManyMode() {
             </div>
           </div>
 
-          {/* Sort controls + export */}
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:"12px", flexWrap:"wrap", gap:"8px" }}>
             <div className="section-label" style={{ margin:0 }}>
               Similarity leaderboard — {doneCount} result{doneCount !== 1 ? "s" : ""}
               {running && <span style={{ color:"var(--muted)", marginLeft:"8px" }}>(updating live…)</span>}
             </div>
-            <div style={{ display:"flex", gap:"6px", alignItems:"center" }}>
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-                style={{ background:"var(--surface)", border:"1px solid var(--border2)", borderRadius:"7px", color:"var(--text)", fontFamily:"var(--mono)", fontSize:"11px", padding:"5px 10px", cursor:"pointer", outline:"none" }}
-              >
-                <option value="pct_desc">Sort: Highest first</option>
-                <option value="pct_asc">Sort: Lowest first</option>
-                <option value="name">Sort: Name A–Z</option>
-              </select>
-            </div>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              style={{ background:"var(--surface)", border:"1px solid var(--border2)", borderRadius:"7px", color:"var(--text)", fontFamily:"var(--mono)", fontSize:"11px", padding:"5px 10px", cursor:"pointer", outline:"none" }}
+            >
+              <option value="pct_desc">Sort: Highest first</option>
+              <option value="pct_asc">Sort: Lowest first</option>
+              <option value="name">Sort: Name A–Z</option>
+            </select>
           </div>
 
-          {/* Column label strip */}
           <div style={{ display:"grid", gridTemplateColumns:"36px 1fr 140px 110px 80px 28px", gap:"10px", padding:"0 14px", marginBottom:"6px" }}>
             {["#","File","Similarity","Risk","Matches",""].map(h => (
               <div key={h} style={{ fontFamily:"var(--mono)", fontSize:"9px", color:"var(--muted)", textTransform:"uppercase", letterSpacing:"1px" }}>{h}</div>
             ))}
           </div>
 
-          {/* Accordion rows */}
           <div style={{ display:"flex", flexDirection:"column", gap:"6px", marginBottom:"1rem" }}>
             {sortedResults.map((item, i) => {
               const r = item.result;
@@ -1136,12 +1106,12 @@ function OneToManyMode() {
 
               return (
                 <div key={item.file.name} style={{ background:"var(--surface)", border:`1px solid ${isOpen ? "rgba(0,229,160,0.3)" : "var(--border)"}`, borderRadius:"10px", overflow:"hidden", transition:"border-color 0.2s" }}>
-                  {/* ── Summary row (always visible, click to toggle) ── */}
                   <div
                     onClick={() => {
                       setExpandedRow(prev => {
                         const next = prev === item.file.name ? null : item.file.name;
-                        if (next) setTimeout(() => expandedRef.current?.scrollIntoView({ behavior:"smooth", block:"nearest" }), 60);
+                        // BUG FIX #6: scroll to this specific row's ref
+                        if (next) setTimeout(() => expandedRefs.current[next]?.scrollIntoView({ behavior:"smooth", block:"nearest" }), 60);
                         return next;
                       });
                     }}
@@ -1149,16 +1119,11 @@ function OneToManyMode() {
                     onMouseEnter={e => { if (!isOpen) e.currentTarget.style.background = "rgba(255,255,255,0.03)"; }}
                     onMouseLeave={e => { if (!isOpen) e.currentTarget.style.background = "transparent"; }}
                   >
-                    {/* Rank */}
-                    <span className={`otm-rank ${rankCls}`} style={{ textAlign:"center" }}>{i+1}</span>
-
-                    {/* File info */}
-                    <div className="otm-file-info">
-                      <div className="fname">{lang?.emoji} {item.file.name}</div>
-                      <div className="fmeta">{r.language_b} · {r.matchingLines?.length ?? 0} exact matches</div>
+                    <span className={`otm-rank ${rankCls}`} style={{ textAlign:"center", fontFamily:"var(--mono)", fontSize:"11px", color:"var(--muted)", minWidth:"24px" }}>{i+1}</span>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ color:"var(--text)", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", maxWidth:"220px", fontFamily:"var(--mono)", fontSize:"12px" }}>{lang?.emoji} {item.file.name}</div>
+                      <div style={{ fontSize:"10px", color:"var(--muted)", marginTop:"2px", fontFamily:"var(--mono)" }}>{r.language_b} · {r.matchingLines?.length ?? 0} exact matches</div>
                     </div>
-
-                    {/* Bar */}
                     <div className="otm-bar-wrap">
                       <div style={{ display:"flex", justifyContent:"space-between", marginBottom:"3px" }}>
                         <span style={{ fontFamily:"var(--mono)", fontSize:"10px", color:"var(--muted)" }}>{getVerdict(pct)}</span>
@@ -1168,39 +1133,30 @@ function OneToManyMode() {
                         <div className="otm-bar-fill" style={{ width:`${pct}%`, background: pct >= 70 ? "#ff4f4f" : pct >= 40 ? "#f5a623" : pct >= 15 ? "#80d8ff" : "#00e5a0" }} />
                       </div>
                     </div>
-
-                    {/* Risk badge */}
                     <span className="otm-risk-badge" style={{ color:risk.color, background:risk.bg, borderColor:risk.border }}>{risk.label}</span>
-
-                    {/* Matching lines */}
                     <span style={{ fontFamily:"var(--mono)", fontSize:"12px", color:heatTextColor(pct), textAlign:"right" }}>{r.matchingLines?.length ?? 0}</span>
-
-                    {/* Chevron */}
                     <span style={{ color:"var(--muted)", fontSize:"12px", textAlign:"center", transition:"transform 0.2s", transform: isOpen ? "rotate(180deg)" : "rotate(0deg)", display:"inline-block" }}>▾</span>
                   </div>
 
-                  {/* ── Expanded detail panel ── */}
                   {isOpen && (
-                    <div ref={expandedRef} style={{ borderTop:"1px solid var(--border2)", padding:"1.25rem 1.5rem", background:"rgba(0,0,0,0.2)" }}>
-                      {/* Compact header inside panel */}
+                    // BUG FIX #6: attach the ref to this specific row by filename key
+                    <div
+                      ref={el => { expandedRefs.current[item.file.name] = el; }}
+                      style={{ borderTop:"1px solid var(--border2)", padding:"1.25rem 1.5rem", background:"rgba(0,0,0,0.2)" }}
+                    >
                       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:"1.25rem", flexWrap:"wrap", gap:"8px" }}>
                         <div style={{ fontFamily:"var(--mono)", fontSize:"12px", color:"var(--accent)" }}>
                           🔑 {sourceFile?.name} <span style={{ color:"var(--muted)" }}>vs</span> 📄 {item.file.name}
                         </div>
-                        <button
-                          className="glass-btn"
-                          style={{ padding:"5px 12px", fontSize:"11px" }}
-                          onClick={(e) => { e.stopPropagation(); setExpandedRow(null); }}
-                        >⊟ Collapse</button>
+                        <button className="glass-btn" style={{ padding:"5px 12px", fontSize:"11px" }} onClick={(e) => { e.stopPropagation(); setExpandedRow(null); }}>⊟ Collapse</button>
                       </div>
 
-                      {/* Score summary row — compact 4-up grid */}
                       <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:"8px", marginBottom:"1.25rem" }}>
                         {[
-                          { label:"Similarity", val:`${r.similarity_percent}%`, color:heatTextColor(r.similarity_percent) },
-                          { label:"Logic", val:`${r.logic_similarity}%`, color:heatTextColor(r.logic_similarity) },
-                          { label:"Structure", val:`${r.structure_similarity}%`, color:heatTextColor(r.structure_similarity) },
-                          { label:"Token Overlap", val:`${r.token_overlap}%`, color:heatTextColor(r.token_overlap) },
+                          { label:"Similarity",    val:`${r.similarity_percent}%`,  color:heatTextColor(r.similarity_percent) },
+                          { label:"Logic",         val:`${r.logic_similarity}%`,    color:heatTextColor(r.logic_similarity) },
+                          { label:"Structure",     val:`${r.structure_similarity}%`,color:heatTextColor(r.structure_similarity) },
+                          { label:"Token Overlap", val:`${r.token_overlap}%`,       color:heatTextColor(r.token_overlap) },
                         ].map(({ label, val, color }) => (
                           <div key={label} style={{ background:"rgba(255,255,255,0.04)", border:"1px solid var(--border)", borderRadius:"8px", padding:"10px 12px", textAlign:"center" }}>
                             <div style={{ fontFamily:"var(--mono)", fontSize:"18px", fontWeight:600, color }}>{val}</div>
@@ -1209,12 +1165,11 @@ function OneToManyMode() {
                         ))}
                       </div>
 
-                      {/* Algo scores strip */}
                       <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:"6px", marginBottom:"1.25rem" }}>
                         {[
                           { label:"Token Sim (Jaccard)", val:r.algo_token_similarity },
-                          { label:"Structural Match", val:r.algo_structural_score },
-                          { label:"Norm. Overlap", val:r.algo_normalized_overlap },
+                          { label:"Structural Match",    val:r.algo_structural_score },
+                          { label:"Norm. Overlap",       val:r.algo_normalized_overlap },
                         ].map(({ label, val }) => (
                           <div key={label} style={{ background:"rgba(0,229,160,0.04)", border:"1px solid rgba(0,229,160,0.12)", borderRadius:"7px", padding:"8px 10px" }}>
                             <div style={{ fontFamily:"var(--mono)", fontSize:"9px", color:"var(--muted)", textTransform:"uppercase", letterSpacing:"0.8px", marginBottom:"3px" }}>{label}</div>
@@ -1224,14 +1179,12 @@ function OneToManyMode() {
                         ))}
                       </div>
 
-                      {/* Summary text */}
                       {r.summary && (
                         <div style={{ background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:"8px", padding:"10px 14px", fontFamily:"var(--mono)", fontSize:"12px", color:"var(--muted)", lineHeight:"1.7", marginBottom:"1.25rem" }}>
                           <span style={{ color:"var(--text)", fontWeight:600 }}>Summary: </span>{r.summary}
                         </div>
                       )}
 
-                      {/* Matching lines */}
                       <div className="section-label" style={{ marginBottom:"8px" }}>
                         Exact matching lines — {r.matchingLines?.length ?? 0} (100% verified)
                       </div>
@@ -1247,7 +1200,6 @@ function OneToManyMode() {
                           ))}
                       </div>
 
-                      {/* Diff */}
                       <InlineDiff
                         codeAContent={sourceContent}
                         codeBContent={item.content}
@@ -1255,25 +1207,20 @@ function OneToManyMode() {
                         fileBName={item.file.name}
                       />
 
-                      {/* Findings */}
                       {r.findings && (<>
                         <div className="section-label" style={{ marginBottom:"8px" }}>Detailed findings</div>
                         <div className="findings" style={{ marginBottom:"1rem" }}>{r.findings}</div>
                       </>)}
 
-                      {/* Collapse button at bottom */}
-                      <button
-                        className="glass-btn"
-                        style={{ width:"100%", justifyContent:"center", marginTop:"4px" }}
-                        onClick={() => setExpandedRow(null)}
-                      >⊟ Collapse details</button>
+                      <button className="glass-btn" style={{ width:"100%", justifyContent:"center", marginTop:"4px" }} onClick={() => setExpandedRow(null)}>
+                        ⊟ Collapse details
+                      </button>
                     </div>
                   )}
                 </div>
               );
             })}
 
-            {/* Loading rows for in-progress files */}
             {running && loadingSet.size > 0 && [...loadingSet].map(idx => (
               <div key={`loading-${idx}`} style={{ display:"flex", alignItems:"center", gap:"10px", padding:"12px 14px", background:"var(--surface)", border:"1px solid var(--border)", borderRadius:"10px", fontFamily:"var(--mono)", fontSize:"11px", color:"var(--muted)" }}>
                 <div className="matrix-spinner" />
@@ -1282,10 +1229,9 @@ function OneToManyMode() {
             ))}
           </div>
 
-          {/* Export row */}
           {!running && (
             <div className="otm-export-row">
-              <button className="glass-btn" onClick={() => exportPDFOneToMany(results, sourceFile.name)}>📊 Export PDF</button>
+              <button className="glass-btn" onClick={exportPDFOneToMany}>📊 Export PDF</button>
               <button className="glass-btn" onClick={exportJSON}>⬇ Export JSON</button>
             </div>
           )}
@@ -1297,26 +1243,26 @@ function OneToManyMode() {
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const [mode, setMode]               = useState("pair");
-  const [fileA, setFileA]             = useState(null);
-  const [fileB, setFileB]             = useState(null);
-  const [loading, setLoading]         = useState(false);
-  const [error, setError]             = useState("");
-  const [result, setResult]           = useState(null);
-  const [codeAContent, setCodeAContent] = useState("");
-  const [codeBContent, setCodeBContent] = useState("");
+  const [mode, setMode]                   = useState("pair");
+  const [fileA, setFileA]                 = useState(null);
+  const [fileB, setFileB]                 = useState(null);
+  const [loading, setLoading]             = useState(false);
+  const [error, setError]                 = useState("");
+  const [result, setResult]               = useState(null);
+  const [codeAContent, setCodeAContent]   = useState("");
+  const [codeBContent, setCodeBContent]   = useState("");
   const [isFromHistory, setIsFromHistory] = useState(false);
-  const [batchFiles, setBatchFiles]   = useState([]);
-  const [batchMatrix, setBatchMatrix] = useState({});
+  const [batchFiles, setBatchFiles]       = useState([]);
+  const [batchMatrix, setBatchMatrix]     = useState({});
   const [batchLoadingCells, setBatchLoadingCells] = useState(new Set());
   const [batchProgress, setBatchProgress] = useState({ done:0, total:0 });
-  const [batchRunning, setBatchRunning] = useState(false);
+  const [batchRunning, setBatchRunning]   = useState(false);
   const [batchContents, setBatchContents] = useState({});
-  const [modalData, setModalData]     = useState(null);
-  const [history, setHistory]         = useState([]);
-  const [showHistory, setShowHistory] = useState(false);
-  const [toggleText, setToggleText]   = useState(true);
-  const [fade, setFade]               = useState(true);
+  const [modalData, setModalData]         = useState(null);
+  const [history, setHistory]             = useState([]);
+  const [showHistory, setShowHistory]     = useState(false);
+  const [toggleText, setToggleText]       = useState(true);
+  const [fade, setFade]                   = useState(true);
   const historyRef = useRef(null);
 
   const humanScore = result?.human_score ?? (result ? 100 - result.similarity_percent : 0);
@@ -1415,7 +1361,6 @@ export default function App() {
     addLine(`Powered by : LLaMA 3.3 70B (Groq API) + Algorithmic Analysis`, { size:9, gap:5 });
     addDivider();
     addLine("COMPARISON SUBJECT", { bold:true, size:10, gap:7 });
-    addLine(`Comparison result for "${result.nameA}" and "${result.nameB}" are as follows:`, { size:10, gap:7 });
     addLine(`File A (Original) : ${result.nameA}`, { gap:6 });
     addLine(`File B (Suspect)  : ${result.nameB}`, { gap:6 });
     addLine(`Language A        : ${result.language_a}`, { gap:6 });
@@ -1470,7 +1415,6 @@ export default function App() {
       generated_at: new Date().toLocaleString(),
       powered_by: "LLaMA 3.3 70B (Groq API) + Algorithmic Analysis",
       comparison: {
-        description: `Comparison result for "${result.nameA}" and "${result.nameB}" are as follows:`,
         file_a: { name:result.nameA, role:"Original", language:result.language_a },
         file_b: { name:result.nameB, role:"Suspect",  language:result.language_b },
       },
@@ -1478,15 +1422,19 @@ export default function App() {
       blended_scores: { overall_similarity_percent:result.similarity_percent, structure_similarity_percent:result.structure_similarity, token_overlap_percent:result.token_overlap },
       algorithmic_scores: { token_similarity_jaccard_percent:result.algo_token_similarity, structural_match_percent:result.algo_structural_score, normalized_line_overlap_percent:result.algo_normalized_overlap, exact_matching_lines_count:result.matchingLines?.length ?? 0 },
       ai_estimated_scores: { logic_similarity_percent:result.logic_similarity, human_written_percent:result.human_score ?? (100 - result.similarity_percent), ai_generated_likelihood_percent:result.ai_generated_likelihood ?? null, ai_run_count:result.ai_run_count ?? 1 },
-      summary:result.summary, findings:result.findings, matching_lines:{ count:result.matchingLines?.length ?? 0, lines:result.matchingLines ?? [] }, timestamp:result.timestamp,
+      summary: result.summary, findings: result.findings,
+      matching_lines: { count:result.matchingLines?.length ?? 0, lines:result.matchingLines ?? [] },
+      timestamp: result.timestamp,
     };
     const blob = new Blob([JSON.stringify(report, null, 2)], { type:"application/json" });
-    const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url;
     const safeA = result.nameA.replace(/\.[^.]+$/, ""), safeB = result.nameB.replace(/\.[^.]+$/, "");
-    a.download = `plagiarism-${safeA}-vs-${safeB}.json`; a.click(); URL.revokeObjectURL(url);
+    a.download = `plagiarism-${safeA}-vs-${safeB}.json`;
+    a.click(); URL.revokeObjectURL(url);
   }
 
-  const batchDoneCount = Object.keys(batchMatrix).length;
+  const batchDoneCount  = Object.keys(batchMatrix).length;
   const batchTotalPairs = batchFiles.length > 1 ? (batchFiles.length * (batchFiles.length - 1)) / 2 : 0;
 
   return (
@@ -1510,7 +1458,8 @@ export default function App() {
               <span style={{ fontSize:"11px", color:"#aaa", fontFamily:"var(--mono)", letterSpacing:"1px" }}>HISTORY</span>
               <button className="glass-btn danger" style={{ padding:"3px 8px", fontSize:"10px" }} onClick={clearHistory}>Clear</button>
             </div>
-            {history.length === 0 ? <div style={{ fontSize:"11px", color:"#777", fontFamily:"var(--mono)" }}>No history yet</div>
+            {history.length === 0
+              ? <div style={{ fontSize:"11px", color:"#777", fontFamily:"var(--mono)" }}>No history yet</div>
               : history.map((item, i) => (
                 <div key={i} className="history-item" onClick={() => { setResult(item); setMode("pair"); setShowHistory(false); setIsFromHistory(true); setCodeAContent(""); setCodeBContent(""); }}>
                   <span style={{ color:"var(--text)" }}>{item.nameA} ↔ {item.nameB}</span>
@@ -1521,25 +1470,20 @@ export default function App() {
           </div>
         )}
 
-        {/* Mode tabs — now 3 tabs */}
         <div className="mode-tabs">
-          <button className={`mode-tab${mode === "pair" ? " active" : ""}`} onClick={() => { setMode("pair"); setError(""); }}>⇄ Pair Check</button>
-          <button className={`mode-tab${mode === "otm" ? " active" : ""}`} onClick={() => { setMode("otm"); setError(""); }}
-            style={mode === "otm" ? {} : {}}>
-            🎯 One-to-Many
-          </button>
+          <button className={`mode-tab${mode === "pair"  ? " active" : ""}`} onClick={() => { setMode("pair");  setError(""); }}>⇄ Pair Check</button>
+          <button className={`mode-tab${mode === "otm"   ? " active" : ""}`} onClick={() => { setMode("otm");   setError(""); }}>🎯 One-to-Many</button>
           <button className={`mode-tab${mode === "batch" ? " active" : ""}`} onClick={() => { setMode("batch"); setError(""); }}>📊 Batch Matrix</button>
         </div>
 
-        {/* One-to-Many info banner */}
         {mode === "otm" && (
           <div style={{ background:"linear-gradient(135deg, rgba(13,164,235,0.08), rgba(0,229,160,0.04))", border:"1px solid rgba(13,164,235,0.25)", borderRadius:"10px", padding:"12px 16px", marginBottom:"1.5rem", fontFamily:"var(--mono)", fontSize:"11px", color:"#aaa", lineHeight:"1.8" }}>
-            <strong style={{ color:"#0da4eb" }}>🎯 One-to-Many Mode</strong> — Upload one base/source file (e.g. model solution or original code), then upload all student submissions. Every submission is compared against the source. Perfect for coding rounds, hackathons, and classroom grading.
+            <strong style={{ color:"#0da4eb" }}>🎯 One-to-Many Mode</strong> — Upload one base/source file, then upload all student submissions. Every submission is compared against the source.
             <div style={{ marginTop:"6px", display:"flex", gap:"16px", flexWrap:"wrap" }}>
               <span>✓ Live leaderboard ranked by similarity</span>
               <span>✓ Risk flags: High / Medium / Low / Clean</span>
               <span>✓ Click any row for full diff + findings</span>
-              <span>✓ Export CSV or JSON report</span>
+              <span>✓ Export PDF or JSON report</span>
             </div>
           </div>
         )}
