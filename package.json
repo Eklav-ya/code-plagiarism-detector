@@ -25,6 +25,7 @@
     "globals": "^17.4.0",
     "vite": "^8.0.1"
   },
+  "regions": ["iad1"],
   "functions": {
     "pages/api/check.js": {
       "maxDuration": 30
