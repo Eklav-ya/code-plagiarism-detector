@@ -872,53 +872,80 @@ function OneToManyMode() {
   const cleanCount = results.filter(r => r.result.similarity_percent < 15).length;
   const avgPct     = doneCount ? Math.round(results.reduce((s,r) => s + r.result.similarity_percent, 0) / doneCount) : 0;
 
-  // // Export leaderboard as CSV
-  // function exportCSV() {
-  //   if (!results.length) return;
-  //   const header = ["Rank","File","Similarity %","Verdict","Risk","Logic Sim %","Structure %","Token Overlap %","Matching Lines","Timestamp"];
-  //   const rows = sortedResults.map((item, i) => {
-  //     const r = item.result;
-  //     return [i+1, item.file.name, r.similarity_percent, getVerdict(r.similarity_percent), getRiskLabel(r.similarity_percent).label, r.logic_similarity, r.structure_similarity, r.token_overlap, r.matchingLines?.length ?? 0, r.timestamp];
-  //   });
-  //   const csv = [header, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
-  //   const blob = new Blob([csv], { type:"text/csv" });
-  //   const url  = URL.createObjectURL(blob);
-  //   const a    = document.createElement("a"); a.href = url;
-  //   a.download = `one-to-many-report-${sourceFile?.name ?? "source"}.csv`;
-  //   a.click(); URL.revokeObjectURL(url);
-  // }
   //Export leaderboard as PDF
   function exportPDFOneToMany(results, sourceFileName) {
   const doc = new jsPDF();
-
   doc.setFont("Courier", "normal");
   doc.setFontSize(12);
 
   let y = 10;
 
-  doc.text("Code Plagiarism Report (One-to-Many)", 10, y);
-  y += 10;
+  const addLine = (text, opts = {}) => {
+    doc.setFont("Courier", opts.bold ? "Bold" : "Normal");
+    doc.setFontSize(opts.size || 10);
+    const lines = doc.splitTextToSize(String(text), 180);
+    lines.forEach(line => {
+      if (y > 280) { doc.addPage(); y = 10; }
+      doc.text(line, 10, y);
+      y += opts.gap || 6;
+    });
+    doc.setFont("Courier", "Normal");
+    doc.setFontSize(10);
+  };
 
-  doc.text(`Source File: ${sourceFileName}`, 10, y);
-  y += 10;
+  const addDivider = () => {
+    doc.setDrawColor(180, 180, 180);
+    doc.line(10, y, 200, y);
+    y += 5;
+  };
 
-  results.forEach((res, index) => {
-    if (y > 270) {
-      doc.addPage();
-      y = 10;
-    }
+  addLine("CODE PLAGIARISM REPORT — ONE TO MANY", { bold: true, size: 14, gap: 8 });
+  addLine(`Generated  : ${new Date().toLocaleString()}`, { size: 9, gap: 5 });
+  addLine(`Source File: ${sourceFileName}`, { size: 9, gap: 5 });
+  addDivider();
 
-    doc.text(
-      `${index + 1}. ${res.nameB} → ${res.similarity_percent}% (${getVerdict(res.similarity_percent)})`,
-      10,
-      y
+  // Summary stats
+  const highRisk   = results.filter(item => item.result.similarity_percent >= 70).length;
+  const medRisk    = results.filter(item => item.result.similarity_percent >= 40 && item.result.similarity_percent < 70).length;
+  const cleanCount = results.filter(item => item.result.similarity_percent < 15).length;
+  const avgPct     = results.length
+    ? Math.round(results.reduce((s, item) => s + item.result.similarity_percent, 0) / results.length)
+    : 0;
+
+  addLine("SUMMARY", { bold: true, size: 11, gap: 7 });
+  addLine(`Total submissions : ${results.length}`, { gap: 5 });
+  addLine(`High risk (≥70%)  : ${highRisk}`, { gap: 5 });
+  addLine(`Medium risk (≥40%): ${medRisk}`, { gap: 5 });
+  addLine(`Clean (<15%)      : ${cleanCount}`, { gap: 5 });
+  addLine(`Average similarity: ${avgPct}%`, { gap: 5 });
+  y += 4;
+  addDivider();
+
+  addLine("RESULTS (sorted by similarity)", { bold: true, size: 11, gap: 7 });
+
+  // ✅ Correctly destructure item.result
+  results.forEach((item, index) => {
+    const r = item.result;   // <-- this was the missing step
+
+    if (y > 255) { doc.addPage(); y = 10; }
+
+    addLine(
+      `${index + 1}. ${r.nameB ?? item.file.name}`,
+      { bold: true, size: 10, gap: 6 }
     );
-    y += 8;
+    addLine(`   Similarity : ${r.similarity_percent}% — ${getVerdict(r.similarity_percent)}`, { gap: 5 });
+    addLine(`   Structure  : ${r.structure_similarity}%  |  Token overlap: ${r.token_overlap}%`, { gap: 5 });
+    addLine(`   Exact matches: ${r.matchingLines?.length ?? 0} lines`, { gap: 5 });
+
+    if (r.summary) {
+      addLine(`   Summary: ${r.summary}`, { size: 9, gap: 5 });
+    }
+    y += 3;
   });
 
-  doc.save("plagiarism-report.pdf");
+  doc.save(`plagiarism-one-to-many-${sourceFileName}.pdf`);
 }
-
+  
   // Export JSON
   function exportJSON() {
     if (!results.length) return;
