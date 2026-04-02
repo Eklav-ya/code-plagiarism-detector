@@ -872,21 +872,52 @@ function OneToManyMode() {
   const cleanCount = results.filter(r => r.result.similarity_percent < 15).length;
   const avgPct     = doneCount ? Math.round(results.reduce((s,r) => s + r.result.similarity_percent, 0) / doneCount) : 0;
 
-  // Export leaderboard as CSV
-  function exportCSV() {
-    if (!results.length) return;
-    const header = ["Rank","File","Similarity %","Verdict","Risk","Logic Sim %","Structure %","Token Overlap %","Matching Lines","Timestamp"];
-    const rows = sortedResults.map((item, i) => {
-      const r = item.result;
-      return [i+1, item.file.name, r.similarity_percent, getVerdict(r.similarity_percent), getRiskLabel(r.similarity_percent).label, r.logic_similarity, r.structure_similarity, r.token_overlap, r.matchingLines?.length ?? 0, r.timestamp];
-    });
-    const csv = [header, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
-    const blob = new Blob([csv], { type:"text/csv" });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement("a"); a.href = url;
-    a.download = `one-to-many-report-${sourceFile?.name ?? "source"}.csv`;
-    a.click(); URL.revokeObjectURL(url);
-  }
+  // // Export leaderboard as CSV
+  // function exportCSV() {
+  //   if (!results.length) return;
+  //   const header = ["Rank","File","Similarity %","Verdict","Risk","Logic Sim %","Structure %","Token Overlap %","Matching Lines","Timestamp"];
+  //   const rows = sortedResults.map((item, i) => {
+  //     const r = item.result;
+  //     return [i+1, item.file.name, r.similarity_percent, getVerdict(r.similarity_percent), getRiskLabel(r.similarity_percent).label, r.logic_similarity, r.structure_similarity, r.token_overlap, r.matchingLines?.length ?? 0, r.timestamp];
+  //   });
+  //   const csv = [header, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
+  //   const blob = new Blob([csv], { type:"text/csv" });
+  //   const url  = URL.createObjectURL(blob);
+  //   const a    = document.createElement("a"); a.href = url;
+  //   a.download = `one-to-many-report-${sourceFile?.name ?? "source"}.csv`;
+  //   a.click(); URL.revokeObjectURL(url);
+  // }
+  //Export leaderboard as PDF
+  function exportPDFOneToMany(results, sourceFileName) {
+  const doc = new jsPDF();
+
+  doc.setFont("Courier", "normal");
+  doc.setFontSize(12);
+
+  let y = 10;
+
+  doc.text("Code Plagiarism Report (One-to-Many)", 10, y);
+  y += 10;
+
+  doc.text(`Source File: ${sourceFileName}`, 10, y);
+  y += 10;
+
+  results.forEach((res, index) => {
+    if (y > 270) {
+      doc.addPage();
+      y = 10;
+    }
+
+    doc.text(
+      `${index + 1}. ${res.nameB} → ${res.similarity_percent}% (${getVerdict(res.similarity_percent)})`,
+      10,
+      y
+    );
+    y += 8;
+  });
+
+  doc.save("plagiarism-report.pdf");
+}
 
   // Export JSON
   function exportJSON() {
@@ -1227,7 +1258,7 @@ function OneToManyMode() {
           {/* Export row */}
           {!running && (
             <div className="otm-export-row">
-              <button className="glass-btn" onClick={exportCSV}>📊 Export CSV</button>
+              <button className="glass-btn" onClick={() => exportPDFOneToMany(results, sourceFile.name)}>📊 Export PDF</button>
               <button className="glass-btn" onClick={exportJSON}>⬇ Export JSON</button>
             </div>
           )}
