@@ -1,6 +1,6 @@
 import { jsPDF } from "jspdf";
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
-
+// v2
 // ─── File reader ──────────────────────────────────────────────────────────────
 const readFile = (file) =>
   new Promise((res, rej) => {

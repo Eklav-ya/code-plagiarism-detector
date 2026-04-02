@@ -4,6 +4,11 @@ export default async function handler(req, res) {
   }
 
   const apiKey = process.env.GROQ_API_KEY;
+  
+  // ADD THIS ↓
+  console.log("KEY EXISTS:", !!apiKey);
+  console.log("BODY:", JSON.stringify(req.body));
+
   if (!apiKey) {
     return res.status(500).json({ error: "API key not configured on server." });
   }
@@ -26,6 +31,12 @@ export default async function handler(req, res) {
 
     return res.status(200).json(data);
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    // REPLACE THE CATCH WITH THIS ↓
+    console.log("FETCH ERROR:", err.message, err.cause?.message);
+    return res.status(500).json({ 
+      error: err.message,
+      type: err.name,
+      cause: err.cause?.message
+    });
   }
 }
