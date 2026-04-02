@@ -300,7 +300,7 @@ async function analyzeFilePair(fileA, fileB, codeA, codeB) {
 
   let run2 = null;
   try {
-    await new Promise(res => setTimeout(res, 1500));
+    await new Promise(res => setTimeout(res, 3000));
     run2 = await callGroqOnce(fileA.name, fileB.name, codeA, codeB);
   } catch {}
 

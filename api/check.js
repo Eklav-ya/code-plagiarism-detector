@@ -1,11 +1,6 @@
-// /api/check.js  — Vercel Edge Function
-// Edge runtime has NO timeout limit (vs 10s on Hobby serverless)
-// This restores llama-3.3-70b-versatile with full quality results
-
 export const config = { runtime: "edge" };
 
 export default async function handler(req) {
-  // ── CORS preflight ────────────────────────────────────────────────────────
   if (req.method === "OPTIONS") {
     return new Response(null, {
       status: 204,
@@ -24,7 +19,6 @@ export default async function handler(req) {
     });
   }
 
-  // ── Read body ─────────────────────────────────────────────────────────────
   let body;
   try {
     body = await req.json();
@@ -43,40 +37,47 @@ export default async function handler(req) {
     });
   }
 
-  // ── Force the fast, capable model with safe token limit ──────────────────
-  // llama-3.3-70b-versatile gives high-quality analysis.
-  // Edge runtime handles the longer response time with no issues.
   const payload = {
     ...body,
     model: "llama-3.3-70b-versatile",
-    max_tokens: 800,     // enough for full JSON findings without bloat
-    temperature: 0,      // deterministic for consistency
+    max_tokens: 800,
+    temperature: 0,
   };
 
-  // ── Forward to Groq ───────────────────────────────────────────────────────
-  let groqRes;
-  try {
-    groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(payload),
-    });
-  } catch (err) {
-    return new Response(
-      JSON.stringify({ error: { message: `Network error reaching Groq: ${err.message}` } }),
-      { status: 502, headers: { "Content-Type": "application/json" } }
-    );
+  // Retry up to 4 times with exponential backoff on 429
+  const MAX_RETRIES = 4;
+  let lastStatus = 500;
+  let lastText = "";
+
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      const waitMs = Math.pow(2, attempt) * 1500; // 3s, 6s, 12s
+      await new Promise(res => setTimeout(res, waitMs));
+    }
+
+    let groqRes;
+    try {
+      groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(payload),
+      });
+    } catch (err) {
+      lastText = JSON.stringify({ error: { message: `Network error: ${err.message}` } });
+      continue;
+    }
+
+    lastStatus = groqRes.status;
+    lastText = await groqRes.text();
+
+    if (groqRes.status !== 429) break; // success or non-retryable error
   }
 
-  // ── Stream Groq's response straight back to the client ───────────────────
-  // We read it fully first so we can forward the exact status code.
-  const groqText = await groqRes.text();
-
-  return new Response(groqText, {
-    status: groqRes.status,
+  return new Response(lastText, {
+    status: lastStatus,
     headers: {
       "Content-Type": "application/json",
       "Access-Control-Allow-Origin": "*",
