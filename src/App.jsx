@@ -59,15 +59,48 @@ function getStructuralScore(codeA, codeB) {
   return Math.round((intersection / union) * 100);
 }
 
+// ─── PDF-safe string helper ───────────────────────────────────────────────────
+// Strips/replaces all characters that cause jsPDF corruption
+function pdfSafe(str) {
+  if (str === null || str === undefined) return "";
+  return String(str)
+    // Replace special math/arrow symbols
+    .replace(/≥/g, ">=")
+    .replace(/≤/g, "<=")
+    .replace(/→/g, "->")
+    .replace(/←/g, "<-")
+    .replace(/↑/g, "^")
+    .replace(/↓/g, "v")
+    .replace(/×/g, "x")
+    .replace(/÷/g, "/")
+    .replace(/•/g, "-")
+    .replace(/·/g, ".")
+    .replace(/…/g, "...")
+    .replace(/—/g, "-")
+    .replace(/–/g, "-")
+    .replace(/"/g, '"')
+    .replace(/"/g, '"')
+    .replace(/'/g, "'")
+    .replace(/'/g, "'")
+    // Strip all emoji and non-Latin characters (covers all emoji ranges)
+    .replace(/[\u{1F000}-\u{1FFFF}]/gu, "")
+    .replace(/[\u{2600}-\u{27FF}]/gu, "")
+    .replace(/[\u{2300}-\u{23FF}]/gu, "")
+    .replace(/[\u{2700}-\u{27BF}]/gu, "")
+    .replace(/[\u{FE00}-\u{FEFF}]/gu, "")
+    .replace(/[\u{1F300}-\u{1F9FF}]/gu, "")
+    // Remove any remaining non-ASCII characters
+    .replace(/[^\x00-\x7F]/g, "")
+    .trim();
+}
+
 // ─── ALGORITHMIC-ONLY FALLBACK ────────────────────────────────────────────────
-// Used when AI is unavailable — produces a complete result from pure algorithms
 function buildAlgorithmicResult(nameA, nameB, codeA, codeB) {
   const algoTokenSim    = getTokenSimilarity(codeA, codeB);
   const algoStructSim   = getStructuralScore(codeA, codeB);
   const algoNormOverlap = getNormalizedOverlapPct(codeA, codeB);
   const matchingLines   = getMatchingLines(codeA, codeB);
 
-  // Blend the three algorithmic signals into one similarity score
   const blendedSimilarity = Math.round(
     algoNormOverlap * 0.5 + algoTokenSim * 0.3 + algoStructSim * 0.2
   );
@@ -91,12 +124,12 @@ function buildAlgorithmicResult(nameA, nameB, codeA, codeB) {
     summary,
     findings:
       `AI analysis was unavailable; results are based entirely on deterministic algorithms.\n\n` +
-      `• Normalized line overlap: ${algoNormOverlap}%\n` +
-      `• Token similarity (Jaccard): ${algoTokenSim}%\n` +
-      `• Structural / identifier match: ${algoStructSim}%\n` +
-      `• Exact matching lines: ${matchingLines.length}\n\n` +
+      `- Normalized line overlap: ${algoNormOverlap}%\n` +
+      `- Token similarity (Jaccard): ${algoTokenSim}%\n` +
+      `- Structural / identifier match: ${algoStructSim}%\n` +
+      `- Exact matching lines: ${matchingLines.length}\n\n` +
       `Verdict: ${verdict}. Re-run when the API is available for a full AI-assisted report.`,
-    ai_reason:               "AI unavailable — algorithmic scores only.",
+    ai_reason:               "AI unavailable - algorithmic scores only.",
     algo_token_similarity:   algoTokenSim,
     algo_structural_score:   algoStructSim,
     algo_normalized_overlap: algoNormOverlap,
@@ -124,30 +157,39 @@ function getVerdict(pct) {
 }
 
 const LANG_MAP = {
-  js:    { label: "JavaScript", emoji: "🟨" },
-  jsx:   { label: "React/JSX",  emoji: "⚛️" },
-  ts:    { label: "TypeScript", emoji: "🔷" },
-  tsx:   { label: "React/TSX",  emoji: "⚛️" },
-  py:    { label: "Python",     emoji: "🐍" },
-  java:  { label: "Java",       emoji: "☕" },
-  c:     { label: "C",          emoji: "⚙️" },
-  cpp:   { label: "C++",        emoji: "⚙️" },
-  cs:    { label: "C#",         emoji: "🟣" },
-  go:    { label: "Go",         emoji: "🐹" },
-  rs:    { label: "Rust",       emoji: "🦀" },
-  rb:    { label: "Ruby",       emoji: "💎" },
-  php:   { label: "PHP",        emoji: "🐘" },
-  swift: { label: "Swift",      emoji: "🍎" },
-  kt:    { label: "Kotlin",     emoji: "🎯" },
-  html:  { label: "HTML",       emoji: "🌐" },
-  css:   { label: "CSS",        emoji: "🎨" },
-  txt:   { label: "Text",       emoji: "📄" },
+  js:    { label: "JavaScript", emoji: "JS" },
+  jsx:   { label: "React/JSX",  emoji: "JSX" },
+  ts:    { label: "TypeScript", emoji: "TS" },
+  tsx:   { label: "React/TSX",  emoji: "TSX" },
+  py:    { label: "Python",     emoji: "PY" },
+  java:  { label: "Java",       emoji: "JV" },
+  c:     { label: "C",          emoji: "C" },
+  cpp:   { label: "C++",        emoji: "C++" },
+  cs:    { label: "C#",         emoji: "CS" },
+  go:    { label: "Go",         emoji: "GO" },
+  rs:    { label: "Rust",       emoji: "RS" },
+  rb:    { label: "Ruby",       emoji: "RB" },
+  php:   { label: "PHP",        emoji: "PHP" },
+  swift: { label: "Swift",      emoji: "SW" },
+  kt:    { label: "Kotlin",     emoji: "KT" },
+  html:  { label: "HTML",       emoji: "HTML" },
+  css:   { label: "CSS",        emoji: "CSS" },
+  txt:   { label: "Text",       emoji: "TXT" },
+};
+
+// UI emoji map (separate from PDF-safe labels)
+const LANG_EMOJI_MAP = {
+  js: "🟨", jsx: "⚛️", ts: "🔷", tsx: "⚛️", py: "🐍", java: "☕",
+  c: "⚙️", cpp: "⚙️", cs: "🟣", go: "🐹", rs: "🦀", rb: "💎",
+  php: "🐘", swift: "🍎", kt: "🎯", html: "🌐", css: "🎨", txt: "📄",
 };
 
 function detectLanguage(file) {
   if (!file) return null;
   const ext = file.name.split(".").pop()?.toLowerCase();
-  return LANG_MAP[ext] || { label: ext?.toUpperCase() || "Unknown", emoji: "📄" };
+  const base = LANG_MAP[ext] || { label: ext?.toUpperCase() || "Unknown", emoji: ext?.toUpperCase() || "?" };
+  const uiEmoji = LANG_EMOJI_MAP[ext] || "📄";
+  return { ...base, uiEmoji };
 }
 
 function computeDiff(linesA, linesB) {
@@ -188,7 +230,7 @@ async function callGroqAPI(payload, retries = 3) {
       });
 
       if (resp.status === 429) {
-        const waitMs = Math.pow(2, attempt) * 2000; // 2s, 4s, 8s
+        const waitMs = Math.pow(2, attempt) * 2000;
         await new Promise(res => setTimeout(res, waitMs));
         continue;
       }
@@ -243,7 +285,6 @@ Return exactly:
   return JSON.parse(await callGroqAPI(payload));
 }
 
-// ─── MAIN ANALYSIS — AI + algorithmic blend, with full algo fallback ──────────
 async function analyzeFilePair(fileA, fileB, codeA, codeB) {
   const algoTokenSim    = getTokenSimilarity(codeA, codeB);
   const algoStructSim   = getStructuralScore(codeA, codeB);
@@ -251,15 +292,12 @@ async function analyzeFilePair(fileA, fileB, codeA, codeB) {
   const matchingLines   = getMatchingLines(codeA, codeB);
 
   let run1 = null;
-  // Only attempt second run if first succeeds (saves rate-limit quota)
   try { run1 = await callGroqOnce(fileA.name, fileB.name, codeA, codeB); } catch {}
 
-  // If AI completely failed → return pure algorithmic result (never 0%)
   if (!run1) {
     return buildAlgorithmicResult(fileA.name, fileB.name, codeA, codeB);
   }
 
-  // Optionally run a second time for averaging (add 1.5s gap to respect rate limits)
   let run2 = null;
   try {
     await new Promise(res => setTimeout(res, 1500));
@@ -562,7 +600,7 @@ function DropZone({ label, file, onFile, onRemove }) {
         {file ? (<>
           <div className="dz-name">{file.name}</div>
           {lang && <div style={{ display:"flex", justifyContent:"center", marginTop:"6px" }}>
-            <span className="lang-badge"><span>{lang.emoji}</span><span>{lang.label}</span></span>
+            <span className="lang-badge"><span>{lang.uiEmoji}</span><span>{lang.label}</span></span>
           </div>}
         </>) : <div className="dz-hint">click or drag & drop</div>}
       </div>
@@ -597,7 +635,7 @@ function BatchDropZone({ files, onFiles, onRemoveFile }) {
     {files.length > 0 && <div className="batch-files-grid">
       {files.map((f, i) => { const lang = detectLanguage(f); return (
         <div key={i} className="batch-file-chip">
-          <span>{lang?.emoji}</span>
+          <span>{lang?.uiEmoji}</span>
           <span style={{ color:"var(--text)", maxWidth:"140px", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{f.name}</span>
           <button className="chip-remove" onClick={() => onRemoveFile(i)}>✕</button>
         </div>
@@ -677,12 +715,11 @@ function InlineDiff({ codeAContent, codeBContent, fileAName, fileBName }) {
         <div className="diff-legend-item"><div className="diff-legend-dot" style={{ background:"rgba(255,255,255,0.15)" }} />Identical — possible plagiarism</div>
       </div>
       {(codeAContent.split("\n").length > 400 || codeBContent.split("\n").length > 400) &&
-        <div className="diff-note">⚠ Diff view limited to 400 lines. Full analysis ran on the complete file.</div>}
+        <div className="diff-note">Diff view limited to 400 lines. Full analysis ran on the complete file.</div>}
     </div>}
   </>);
 }
 
-// ─── AI Fallback Banner ───────────────────────────────────────────────────────
 function AiFallbackBanner() {
   return (
     <div className="warn-banner">
@@ -697,22 +734,22 @@ function ReliabilityInfo({ result }) {
   return (
     <div className="reliability-note">
       <div style={{ marginBottom:"6px", color:"var(--text)", fontWeight:"600" }}>How these scores were calculated</div>
-      <div><span className="tag tag-verified">✓ VERIFIED</span> Exact matching lines — pure string algorithm, 100% accurate</div>
-      <div><span className="tag tag-verified">✓ VERIFIED</span> Code diff view — LCS algorithm (same as Git), 100% accurate</div>
-      <div><span className="tag tag-verified">✓ VERIFIED</span> Algorithmic scores (token sim, structural, normalized) — 100% deterministic</div>
+      <div><span className="tag tag-verified">VERIFIED</span> Exact matching lines — pure string algorithm, 100% accurate</div>
+      <div><span className="tag tag-verified">VERIFIED</span> Code diff view — LCS algorithm (same as Git), 100% accurate</div>
+      <div><span className="tag tag-verified">VERIFIED</span> Algorithmic scores (token sim, structural, normalized) — 100% deterministic</div>
       {result.ai_fallback ? (
         <>
-          <div><span className="tag tag-algo">⚙ ALGO-ONLY</span> All similarity scores — AI unavailable, algorithmic only</div>
-          <div style={{ marginTop:"6px", color:"#f5a623" }}>⚠ AI was unavailable — all scores are from deterministic algorithms</div>
+          <div><span className="tag tag-algo">ALGO-ONLY</span> All similarity scores — AI unavailable, algorithmic only</div>
+          <div style={{ marginTop:"6px", color:"#f5a623" }}>AI was unavailable — all scores are from deterministic algorithms</div>
         </>
       ) : (
         <>
-          <div><span className="tag tag-blended">⚡ BLENDED</span> Similarity % — 60% AI + 40% normalized line overlap</div>
-          <div><span className="tag tag-blended">⚡ BLENDED</span> Token overlap — 60% AI + 40% Jaccard token similarity</div>
-          <div><span className="tag tag-blended">⚡ BLENDED</span> Structure match — 60% AI + 40% function/class name overlap</div>
-          <div><span className="tag tag-ai">🤖 AI-ESTIMATED</span> Logic similarity, Human score, AI-generated likelihood — indicative only</div>
+          <div><span className="tag tag-blended">BLENDED</span> Similarity % — 60% AI + 40% normalized line overlap</div>
+          <div><span className="tag tag-blended">BLENDED</span> Token overlap — 60% AI + 40% Jaccard token similarity</div>
+          <div><span className="tag tag-blended">BLENDED</span> Structure match — 60% AI + 40% function/class name overlap</div>
+          <div><span className="tag tag-ai">AI-ESTIMATED</span> Logic similarity, Human score, AI-generated likelihood — indicative only</div>
           {result.ai_run_count === 2 && <div style={{ marginTop:"6px", color:"var(--accent)" }}>✓ AI ran twice and scores were averaged for consistency (LLaMA 3.3 70B via Groq)</div>}
-          {result.ai_run_count === 1 && <div style={{ marginTop:"6px", color:"var(--warn)" }}>⚠ One AI run succeeded — scores may be slightly less consistent</div>}
+          {result.ai_run_count === 1 && <div style={{ marginTop:"6px", color:"var(--warn)" }}>One AI run succeeded — scores may be slightly less consistent</div>}
         </>
       )}
     </div>
@@ -757,7 +794,7 @@ function ResultDetail({ result, fileAName, fileBName, codeAContent, codeBContent
           <div className="stat-item"><div className="stat-label">Plagiarism</div><div className="stat-value" style={{ color:"#ff4f4f" }}>{result.similarity_percent}%</div></div>
         </div>
         <div className="prog-bar"><div className="prog-fill" style={{ width:`${humanScore}%` }} /></div>
-        {result.ai_reason && <div style={{ marginTop:"10px", fontSize:"11px", color:"var(--muted)", fontFamily:"var(--mono)", lineHeight:"1.6" }}>🤖 {result.ai_reason}</div>}
+        {result.ai_reason && <div style={{ marginTop:"10px", fontSize:"11px", color:"var(--muted)", fontFamily:"var(--mono)", lineHeight:"1.6" }}>AI: {result.ai_reason}</div>}
       </div>
       <div className="score-info">
         <div className={`verdict-pill pill-${level}`}>{getVerdict(result.similarity_percent)}</div>
@@ -802,7 +839,7 @@ function BatchMatrix({ files, matrix, loadingCells, onCellClick }) {
             {files.map((f, j) => { const lang = detectLanguage(f); return (
               <th key={j} title={f.name}>
                 <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-start", gap:"2px" }}>
-                  <span style={{ fontSize:"14px" }}>{lang?.emoji}</span><span>{shortName(f)}</span>
+                  <span style={{ fontSize:"14px" }}>{lang?.uiEmoji}</span><span>{shortName(f)}</span>
                 </div>
               </th>
             ); })}
@@ -811,13 +848,13 @@ function BatchMatrix({ files, matrix, loadingCells, onCellClick }) {
         <tbody>
           {files.map((fRow, i) => { const langRow = detectLanguage(fRow); return (
             <tr key={i}>
-              <td className="matrix-row-label" title={fRow.name}><span style={{ marginRight:"6px" }}>{langRow?.emoji}</span>{shortName(fRow)}</td>
+              <td className="matrix-row-label" title={fRow.name}><span style={{ marginRight:"6px" }}>{langRow?.uiEmoji}</span>{shortName(fRow)}</td>
               {files.map((fCol, j) => {
                 if (i === j) return (<td key={j}><div className="matrix-cell self" style={{ background:"rgba(255,255,255,0.03)" }}><span style={{ color:"var(--muted)", fontSize:"18px" }}>—</span></div></td>);
                 const key = `${Math.min(i,j)}-${Math.max(i,j)}`;
                 const res = matrix[key]; const isLoading = loadingCells.has(key);
                 if (isLoading) return (<td key={j}><div className="matrix-cell" style={{ background:"rgba(255,255,255,0.04)" }}><div className="matrix-loading"><div className="matrix-spinner" /></div></div></td>);
-                if (!res) return (<td key={j}><div className="matrix-cell" style={{ background:"rgba(255,255,255,0.02)" }}><span style={{ color:"var(--muted)", fontSize:"11px", fontFamily:"var(--mono)" }}>–</span></div></td>);
+                if (!res) return (<td key={j}><div className="matrix-cell" style={{ background:"rgba(255,255,255,0.02)" }}><span style={{ color:"var(--muted)", fontSize:"11px", fontFamily:"var(--mono)" }}>-</span></div></td>);
                 const pct = res.similarity_percent; const textColor = heatTextColor(pct);
                 return (<td key={j}><div className="matrix-cell" style={{ background:heatColor(pct) }} onClick={() => onCellClick(i, j, res)} title={`${fRow.name} vs ${fCol.name}: ${pct}%`}>
                   <span className="matrix-pct" style={{ color:textColor }}>{pct}%</span>
@@ -830,11 +867,11 @@ function BatchMatrix({ files, matrix, loadingCells, onCellClick }) {
         </tbody>
       </table>
       <div className="matrix-legend">
-        <div className="matrix-legend-item"><div className="matrix-legend-dot" style={{ background:"rgba(255,79,79,0.5)" }} />&ge;70% — Definite Plagiarism</div>
-        <div className="matrix-legend-item"><div className="matrix-legend-dot" style={{ background:"rgba(245,166,35,0.5)" }} />40–69% — Likely Plagiarized</div>
-        <div className="matrix-legend-item"><div className="matrix-legend-dot" style={{ background:"rgba(128,216,255,0.4)" }} />15–39% — Suspicious</div>
-        <div className="matrix-legend-item"><div className="matrix-legend-dot" style={{ background:"rgba(0,229,160,0.3)" }} />&lt;15% — Original</div>
-        <div className="matrix-legend-item" style={{ marginLeft:"auto", color:"var(--accent)" }}>Click any cell to view full diff →</div>
+        <div className="matrix-legend-item"><div className="matrix-legend-dot" style={{ background:"rgba(255,79,79,0.5)" }} />70%+ — Definite Plagiarism</div>
+        <div className="matrix-legend-item"><div className="matrix-legend-dot" style={{ background:"rgba(245,166,35,0.5)" }} />40-69% — Likely Plagiarized</div>
+        <div className="matrix-legend-item"><div className="matrix-legend-dot" style={{ background:"rgba(128,216,255,0.4)" }} />15-39% — Suspicious</div>
+        <div className="matrix-legend-item"><div className="matrix-legend-dot" style={{ background:"rgba(0,229,160,0.3)" }} />under 15% — Original</div>
+        <div className="matrix-legend-item" style={{ marginLeft:"auto", color:"var(--accent)" }}>Click any cell to view full diff</div>
       </div>
     </div>
   );
@@ -880,7 +917,6 @@ function OneToManyMode() {
     setError(""); setRunning(true); setResults([]);
     setProgress({ done:0, total:subFiles.length });
 
-    // Reduced concurrency to 1 to respect rate limits
     const CONCURRENCY = 1;
     let idx = 0;
     const allResults = new Array(subFiles.length).fill(null);
@@ -895,7 +931,6 @@ function OneToManyMode() {
           const res = await analyzeFilePair({ name: sourceFile.name }, { name: f.name }, sourceContent, subContent);
           allResults[i] = { file: f, result: res, content: subContent };
         } catch(e) {
-          // Last-resort: pure algo fallback so we never show 0%
           const subContent = await readFile(f).catch(() => "");
           allResults[i] = {
             file: f,
@@ -906,7 +941,6 @@ function OneToManyMode() {
         setLoadingSet(prev => { const s = new Set(prev); s.delete(i); return s; });
         setProgress(prev => ({ ...prev, done: prev.done + 1 }));
         setResults(allResults.filter(Boolean));
-        // Small delay between calls to avoid rate-limit bursts
         if (idx < subFiles.length) await new Promise(res => setTimeout(res, 800));
       }
     }
@@ -931,15 +965,17 @@ function OneToManyMode() {
   const avgPct     = doneCount ? Math.round(results.reduce((s,r) => s + r.result.similarity_percent, 0) / doneCount) : 0;
   const anyFallback = results.some(r => r.result.ai_fallback);
 
+  // ─── FIXED PDF export — all strings sanitized via pdfSafe() ───────────────
   function exportPDFOneToMany() {
     if (!results.length) return;
     const doc = new jsPDF();
     let y = 10;
 
     const addLine = (text, opts = {}) => {
+      const safeText = pdfSafe(text);
       doc.setFont("Courier", opts.bold ? "Bold" : "Normal");
       doc.setFontSize(opts.size || 10);
-      const lines = doc.splitTextToSize(String(text), 180);
+      const lines = doc.splitTextToSize(safeText, 180);
       lines.forEach(line => {
         if (y > 280) { doc.addPage(); y = 10; }
         doc.text(line, 10, y);
@@ -949,53 +985,53 @@ function OneToManyMode() {
       doc.setFontSize(10);
     };
     const addDivider = () => { doc.setDrawColor(180, 180, 180); doc.line(10, y, 200, y); y += 5; };
+    const addSpacer = (h = 4) => { y += h; };
 
-    addLine("CODE PLAGIARISM REPORT — ONE TO MANY", { bold: true, size: 14, gap: 8 });
+    addLine("CODE PLAGIARISM REPORT - ONE TO MANY", { bold: true, size: 14, gap: 8 });
     addLine(`Generated  : ${new Date().toLocaleString()}`, { size: 9, gap: 5 });
     addLine(`Source File: ${sourceFile?.name ?? "Unknown"}`, { size: 9, gap: 5 });
     addLine(`Powered by : LLaMA 3.3 70B (Groq API) + Algorithmic Analysis`, { size: 9, gap: 5 });
     if (anyFallback) addLine(`NOTE: Some results used algorithmic fallback (AI unavailable).`, { size: 9, gap: 5 });
     addDivider();
 
-    const pdfHighRisk   = results.filter(item => item.result.similarity_percent >= 70).length;
-    const pdfMedRisk    = results.filter(item => item.result.similarity_percent >= 40 && item.result.similarity_percent < 70).length;
-    const pdfCleanCount = results.filter(item => item.result.similarity_percent < 15).length;
-    const pdfAvgPct     = results.length
-      ? Math.round(results.reduce((s, item) => s + item.result.similarity_percent, 0) / results.length)
-      : 0;
-
-    addLine("SUMMARY", { bold: true, size: 11, gap: 7 });
-    addLine(`Total submissions : ${results.length}`,     { gap: 5 });
-    addLine(`High risk  (≥70%) : ${pdfHighRisk}`,        { gap: 5 });
-    addLine(`Medium risk(≥40%) : ${pdfMedRisk}`,         { gap: 5 });
-    addLine(`Clean      (<15%) : ${pdfCleanCount}`,      { gap: 5 });
-    addLine(`Avg similarity    : ${pdfAvgPct}%`,         { gap: 5 });
-    y += 4;
+    // ── SUMMARY section ─────────────────────────────────────────────────────
+    addLine("SUMMARY", { bold: true, size: 12, gap: 8 });
+    addSpacer(2);
+    addLine(`Total submissions  : ${results.length}`, { gap: 6 });
+    addLine(`High risk  (>=70%) : ${highRisk}`, { gap: 6 });
+    addLine(`Medium risk(>=40%) : ${medRisk}`, { gap: 6 });
+    addLine(`Clean      (<15%)  : ${cleanCount}`, { gap: 6 });
+    addLine(`Avg similarity     : ${avgPct}%`, { gap: 6 });
+    addSpacer(4);
     addDivider();
 
     addLine("RESULTS (sorted highest similarity first)", { bold: true, size: 11, gap: 7 });
+    addSpacer(2);
 
     sortedResults.forEach((item, index) => {
       const r = item.result;
       if (y > 255) { doc.addPage(); y = 10; }
       addLine(`${index + 1}. ${r.nameB ?? item.file.name}${r.ai_fallback ? " [algo-only]" : ""}`, { bold: true, size: 10, gap: 6 });
-      addLine(`   Verdict        : ${getVerdict(r.similarity_percent)}`, { gap: 5 });
-      addLine(`   Similarity     : ${r.similarity_percent}%`, { gap: 5 });
-      addLine(`   Logic          : ${r.logic_similarity}%  |  Structure: ${r.structure_similarity}%  |  Token: ${r.token_overlap}%`, { gap: 5 });
-      addLine(`   Token sim (algo)   : ${r.algo_token_similarity ?? "N/A"}%`, { gap: 5 });
-      addLine(`   Structural (algo)  : ${r.algo_structural_score ?? "N/A"}%`, { gap: 5 });
-      addLine(`   Norm overlap (algo): ${r.algo_normalized_overlap ?? "N/A"}%`, { gap: 5 });
-      addLine(`   Exact matches  : ${r.matchingLines?.length ?? 0} lines`, { gap: 5 });
-      addLine(`   Language       : ${r.language_b ?? "Unknown"}`, { gap: 5 });
-      if (r.summary) addLine(`   Summary: ${r.summary}`, { size: 9, gap: 5 });
-      y += 4;
+      addLine(`   Verdict             : ${getVerdict(r.similarity_percent)}`, { gap: 5 });
+      addLine(`   Similarity          : ${r.similarity_percent}%`, { gap: 5 });
+      addLine(`   Logic               : ${r.logic_similarity}%  |  Structure: ${r.structure_similarity}%  |  Token: ${r.token_overlap}%`, { gap: 5 });
+      addLine(`   Token sim (algo)    : ${r.algo_token_similarity ?? "N/A"}%`, { gap: 5 });
+      addLine(`   Structural (algo)   : ${r.algo_structural_score ?? "N/A"}%`, { gap: 5 });
+      addLine(`   Norm overlap (algo) : ${r.algo_normalized_overlap ?? "N/A"}%`, { gap: 5 });
+      addLine(`   Exact matches       : ${r.matchingLines?.length ?? 0} lines`, { gap: 5 });
+      addLine(`   Language            : ${r.language_b ?? "Unknown"}`, { gap: 5 });
+      if (r.summary) {
+        addLine(`   Summary:`, { size: 9, gap: 5 });
+        addLine(`   ${r.summary}`, { size: 9, gap: 5 });
+      }
+      addSpacer(4);
     });
 
     addDivider();
     addLine("RELIABILITY NOTICE", { bold: true, size: 9, gap: 6 });
     addLine("Exact line matches are 100% algorithmically verified and fully reliable.", { size: 9, gap: 5 });
     addLine("Blended scores (60% AI + 40% algorithmic) are more reliable than pure AI estimates.", { size: 9, gap: 5 });
-    addLine("AI-only scores are indicative estimates — not guaranteed accurate.", { size: 9, gap: 5 });
+    addLine("AI-only scores are indicative estimates - not guaranteed accurate.", { size: 9, gap: 5 });
 
     const safeName = (sourceFile?.name ?? "source").replace(/\.[^.]+$/, "");
     doc.save(`plagiarism-one-to-many-${safeName}.pdf`);
@@ -1044,7 +1080,7 @@ function OneToManyMode() {
           ) : (
             <div>
               <div style={{ display:"flex", alignItems:"center", gap:"10px", padding:"10px 0" }}>
-                <span style={{ fontSize:"22px" }}>{detectLanguage(sourceFile)?.emoji}</span>
+                <span style={{ fontSize:"22px" }}>{detectLanguage(sourceFile)?.uiEmoji}</span>
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ fontFamily:"var(--mono)", fontSize:"13px", color:"var(--accent)", fontWeight:600, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{sourceFile.name}</div>
                   <div style={{ fontFamily:"var(--mono)", fontSize:"10px", color:"var(--muted)", marginTop:"2px" }}>{detectLanguage(sourceFile)?.label} · Base file</div>
@@ -1084,10 +1120,10 @@ function OneToManyMode() {
                 const res = results.find(r => r.file.name === f.name);
                 return (
                   <div key={i} className="otm-file-row">
-                    <span>{lang?.emoji}</span>
+                    <span>{lang?.uiEmoji}</span>
                     <span className="file-name">{f.name}</span>
                     {isLoading && <div className="matrix-spinner" style={{ width:10, height:10 }} />}
-                    {res && <span style={{ fontSize:"10px", color: heatTextColor(res.result.similarity_percent), fontWeight:600 }}>{res.result.similarity_percent}%{res.result.ai_fallback ? " ⚙" : ""}</span>}
+                    {res && <span style={{ fontSize:"10px", color: heatTextColor(res.result.similarity_percent), fontWeight:600 }}>{res.result.similarity_percent}%{res.result.ai_fallback ? " (algo)" : ""}</span>}
                     {!isLoading && <button className="file-remove" onClick={() => removeSubFile(i)}>✕</button>}
                   </div>
                 );
@@ -1111,7 +1147,7 @@ function OneToManyMode() {
       >
         {running
           ? <><span className="spin" />Analyzing {progress.done}/{progress.total} submissions...</>
-          : `→ Run One-to-Many Analysis (${subFiles.length} submission${subFiles.length !== 1 ? "s" : ""})`}
+          : `Run One-to-Many Analysis (${subFiles.length} submission${subFiles.length !== 1 ? "s" : ""})`}
       </button>
 
       {running && progress.total > 0 && (
@@ -1130,7 +1166,7 @@ function OneToManyMode() {
         <div className="otm-leaderboard">
           {anyFallback && <AiFallbackBanner />}
           <div className="otm-source-badge">
-            🔑 Source: {sourceFile?.name} · {doneCount} submission{doneCount !== 1 ? "s" : ""} analyzed
+            Source: {sourceFile?.name} · {doneCount} submission{doneCount !== 1 ? "s" : ""} analyzed
           </div>
 
           <div className="otm-summary-row">
@@ -1164,7 +1200,7 @@ function OneToManyMode() {
             >
               <option value="pct_desc">Sort: Highest first</option>
               <option value="pct_asc">Sort: Lowest first</option>
-              <option value="name">Sort: Name A–Z</option>
+              <option value="name">Sort: Name A-Z</option>
             </select>
           </div>
 
@@ -1199,7 +1235,7 @@ function OneToManyMode() {
                     <span style={{ textAlign:"center", fontFamily:"var(--mono)", fontSize:"11px", color:"var(--muted)", minWidth:"24px" }}>{i+1}</span>
                     <div style={{ flex:1, minWidth:0 }}>
                       <div style={{ color:"var(--text)", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", maxWidth:"220px", fontFamily:"var(--mono)", fontSize:"12px" }}>
-                        {lang?.emoji} {item.file.name} {r.ai_fallback && <span style={{ color:"#f5a623", fontSize:"9px" }}>⚙algo</span>}
+                        {lang?.uiEmoji} {item.file.name} {r.ai_fallback && <span style={{ color:"#f5a623", fontSize:"9px" }}>(algo)</span>}
                       </div>
                       <div style={{ fontSize:"10px", color:"var(--muted)", marginTop:"2px", fontFamily:"var(--mono)" }}>{r.language_b} · {r.matchingLines?.length ?? 0} exact matches</div>
                     </div>
@@ -1214,7 +1250,7 @@ function OneToManyMode() {
                     </div>
                     <span className="otm-risk-badge" style={{ color:risk.color, background:risk.bg, borderColor:risk.border }}>{risk.label}</span>
                     <span style={{ fontFamily:"var(--mono)", fontSize:"12px", color:heatTextColor(pct), textAlign:"right" }}>{r.matchingLines?.length ?? 0}</span>
-                    <span style={{ color:"var(--muted)", fontSize:"12px", textAlign:"center", transition:"transform 0.2s", transform: isOpen ? "rotate(180deg)" : "rotate(0deg)", display:"inline-block" }}>▾</span>
+                    <span style={{ color:"var(--muted)", fontSize:"12px", textAlign:"center", transition:"transform 0.2s", transform: isOpen ? "rotate(180deg)" : "rotate(0deg)", display:"inline-block" }}>v</span>
                   </div>
 
                   {isOpen && (
@@ -1226,7 +1262,7 @@ function OneToManyMode() {
                         <div style={{ fontFamily:"var(--mono)", fontSize:"12px", color:"var(--accent)" }}>
                           🔑 {sourceFile?.name} <span style={{ color:"var(--muted)" }}>vs</span> 📄 {item.file.name}
                         </div>
-                        <button className="glass-btn" style={{ padding:"5px 12px", fontSize:"11px" }} onClick={(e) => { e.stopPropagation(); setExpandedRow(null); }}>⊟ Collapse</button>
+                        <button className="glass-btn" style={{ padding:"5px 12px", fontSize:"11px" }} onClick={(e) => { e.stopPropagation(); setExpandedRow(null); }}>Collapse</button>
                       </div>
 
                       {r.ai_fallback && <AiFallbackBanner />}
@@ -1293,7 +1329,7 @@ function OneToManyMode() {
                       </>)}
 
                       <button className="glass-btn" style={{ width:"100%", justifyContent:"center", marginTop:"4px" }} onClick={() => setExpandedRow(null)}>
-                        ⊟ Collapse details
+                        Collapse details
                       </button>
                     </div>
                   )}
@@ -1304,15 +1340,15 @@ function OneToManyMode() {
             {running && loadingSet.size > 0 && [...loadingSet].map(idx => (
               <div key={`loading-${idx}`} style={{ display:"flex", alignItems:"center", gap:"10px", padding:"12px 14px", background:"var(--surface)", border:"1px solid var(--border)", borderRadius:"10px", fontFamily:"var(--mono)", fontSize:"11px", color:"var(--muted)" }}>
                 <div className="matrix-spinner" />
-                <span>Analyzing {subFiles[idx]?.name}…</span>
+                <span>Analyzing {subFiles[idx]?.name}...</span>
               </div>
             ))}
           </div>
 
           {!running && (
             <div className="otm-export-row">
-              <button className="glass-btn" onClick={exportPDFOneToMany}>📊 Export PDF</button>
-              <button className="glass-btn" onClick={exportJSON}>⬇ Export JSON</button>
+              <button className="glass-btn" onClick={exportPDFOneToMany}>Export PDF</button>
+              <button className="glass-btn" onClick={exportJSON}>Export JSON</button>
             </div>
           )}
         </div>
@@ -1388,7 +1424,6 @@ export default function App() {
     setBatchProgress({ done:0, total:pairs.length });
     setBatchLoadingCells(new Set(pairs.map(([i,j]) => `${i}-${j}`)));
 
-    // Reduced to 1 concurrent call to respect rate limits
     const CONCURRENCY = 1;
     let idx = 0;
     async function runNext() {
@@ -1399,13 +1434,11 @@ export default function App() {
           const res = await analyzeFilePair(fA, fB, contents[fA.name], contents[fB.name]);
           setBatchMatrix(prev => ({ ...prev, [key]: res }));
         } catch (e) {
-          // Algo-only fallback so matrix never shows 0%
           const res = buildAlgorithmicResult(fA.name, fB.name, contents[fA.name], contents[fB.name]);
           setBatchMatrix(prev => ({ ...prev, [key]: res }));
         }
         setBatchLoadingCells(prev => { const s = new Set(prev); s.delete(key); return s; });
         setBatchProgress(prev => ({ ...prev, done: prev.done + 1 }));
-        // Delay between pairs to avoid rate-limit burst
         if (idx < pairs.length) await new Promise(res => setTimeout(res, 800));
       }
     }
@@ -1427,7 +1460,6 @@ export default function App() {
       const updatedHistory = [newResult, ...history].slice(0, 10);
       setHistory(updatedHistory); safeStorage.set("plag_history", updatedHistory);
     } catch (e) {
-      // Final catch: try pure algo so user always gets a result
       try {
         const [codeA, codeB] = await Promise.all([readFile(fileA), readFile(fileB)]);
         const algoResult = buildAlgorithmicResult(fileA.name, fileB.name, codeA, codeB);
@@ -1439,53 +1471,69 @@ export default function App() {
     } finally { setLoading(false); }
   }
 
+  // ─── FIXED PDF download — all strings via pdfSafe() ──────────────────────
   function downloadPDF() {
     if (!result) return;
     const doc = new jsPDF();
     let y = 10;
     const addLine = (text, opts = {}) => {
+      const safeText = pdfSafe(text);
       doc.setFont("Courier", opts.bold ? "Bold" : "Normal");
       doc.setFontSize(opts.size || 10);
-      const lines = doc.splitTextToSize(String(text), 180);
+      const lines = doc.splitTextToSize(safeText, 180);
       lines.forEach(line => { if (y > 280) { doc.addPage(); y = 10; } doc.text(line, 10, y); y += opts.gap || 6; });
       doc.setFont("Courier", "Normal"); doc.setFontSize(10);
     };
     const addSpacer = (h = 4) => { y += h; };
     const addDivider = () => { doc.setDrawColor(180,180,180); doc.line(10, y, 200, y); y += 5; };
+
     addLine("CODE PLAGIARISM DETECTION REPORT", { bold:true, size:14, gap:8 });
     addLine(`Generated  : ${new Date().toLocaleString()}`, { size:9, gap:5 });
     addLine(`Powered by : LLaMA 3.3 70B (Groq API) + Algorithmic Analysis`, { size:9, gap:5 });
-    if (result.ai_fallback) addLine(`NOTE: AI unavailable — results are algorithmic only.`, { size:9, gap:5 });
+    if (result.ai_fallback) addLine(`NOTE: AI unavailable - results are algorithmic only.`, { size:9, gap:5 });
     addDivider();
+
     addLine("COMPARISON SUBJECT", { bold:true, size:10, gap:7 });
     addLine(`File A (Original) : ${result.nameA}`, { gap:6 });
     addLine(`File B (Suspect)  : ${result.nameB}`, { gap:6 });
     addLine(`Language A        : ${result.language_a}`, { gap:6 });
     addLine(`Language B        : ${result.language_b}`, { gap:6 });
     addSpacer(2); addDivider();
+
     addLine("VERDICT", { bold:true, size:10, gap:7 });
     addLine(`Overall Verdict : ${getVerdict(result.similarity_percent)}`, { bold:true, size:11, gap:7 });
     addSpacer(2); addDivider();
+
     addLine("SCORES", { bold:true, size:10, gap:7 });
-    addLine(`Overall Similarity   : ${result.similarity_percent}%`, { gap:6 });
-    addLine(`Structure Similarity : ${result.structure_similarity}%`, { gap:6 });
-    addLine(`Token Overlap        : ${result.token_overlap}%`, { gap:6 });
-    addLine(`Token Similarity (Jaccard)     : ${result.algo_token_similarity ?? "N/A"}%`, { gap:6 });
-    addLine(`Structural Match (func names)  : ${result.algo_structural_score ?? "N/A"}%`, { gap:6 });
-    addLine(`Normalized Line Overlap        : ${result.algo_normalized_overlap ?? "N/A"}%`, { gap:6 });
-    addLine(`Exact Matching Lines           : ${result.matchingLines?.length ?? 0}`, { gap:6 });
+    addLine(`Overall Similarity          : ${result.similarity_percent}%`, { gap:6 });
+    addLine(`Structure Similarity        : ${result.structure_similarity}%`, { gap:6 });
+    addLine(`Token Overlap               : ${result.token_overlap}%`, { gap:6 });
+    addLine(`Token Similarity (Jaccard)  : ${result.algo_token_similarity ?? "N/A"}%`, { gap:6 });
+    addLine(`Structural Match            : ${result.algo_structural_score ?? "N/A"}%`, { gap:6 });
+    addLine(`Normalized Line Overlap     : ${result.algo_normalized_overlap ?? "N/A"}%`, { gap:6 });
+    addLine(`Exact Matching Lines        : ${result.matchingLines?.length ?? 0}`, { gap:6 });
     addSpacer(2); addDivider();
+
     addLine("SUMMARY", { bold:true, size:10, gap:7 });
     addLine(result.summary, { gap:6 });
     addSpacer(2); addDivider();
+
     if (result.matchingLines?.length) {
-      addLine(`EXACT MATCHING LINES — ${result.matchingLines.length} found`, { bold:true, size:10, gap:7 });
+      addLine(`EXACT MATCHING LINES - ${result.matchingLines.length} found`, { bold:true, size:10, gap:7 });
       result.matchingLines.slice(0, 30).forEach((line, i) => addLine(`  ${i + 1}. ${line}`, { size:9, gap:5 }));
       if (result.matchingLines.length > 30) addLine(`  ... and ${result.matchingLines.length - 30} more`, { size:9, gap:5 });
       addSpacer(2); addDivider();
     }
+
     addLine("DETAILED FINDINGS", { bold:true, size:10, gap:7 });
     addLine(result.findings, { gap:6 });
+    addSpacer(2); addDivider();
+
+    addLine("RELIABILITY NOTICE", { bold:true, size:9, gap:6 });
+    addLine("Exact line matches are 100% algorithmically verified and fully reliable.", { size:9, gap:5 });
+    addLine("Blended scores (60% AI + 40% algorithmic) are more reliable than pure AI estimates.", { size:9, gap:5 });
+    addLine("AI-only scores are indicative estimates - not guaranteed accurate.", { size:9, gap:5 });
+
     const safeA = result.nameA.replace(/\.[^.]+$/, ""), safeB = result.nameB.replace(/\.[^.]+$/, "");
     doc.save(`plagiarism-${safeA}-vs-${safeB}.pdf`);
   }
@@ -1537,7 +1585,7 @@ export default function App() {
           </h1>
           <p>Combines LLaMA 3.3 70B AI analysis with deterministic algorithms — with full algorithmic fallback when AI is unavailable.</p>
           <div style={{ display:"flex", justifyContent:"flex-end", marginTop:"15px" }}>
-            <button className="history-btn" onClick={() => setShowHistory(p => !p)}>📜 History ({history.length})</button>
+            <button className="history-btn" onClick={() => setShowHistory(p => !p)}>History ({history.length})</button>
           </div>
         </div>
 
@@ -1551,7 +1599,7 @@ export default function App() {
               ? <div style={{ fontSize:"11px", color:"#777", fontFamily:"var(--mono)" }}>No history yet</div>
               : history.map((item, i) => (
                 <div key={i} className="history-item" onClick={() => { setResult(item); setMode("pair"); setShowHistory(false); setIsFromHistory(true); setCodeAContent(""); setCodeBContent(""); }}>
-                  <span style={{ color:"var(--text)" }}>{item.nameA} ↔ {item.nameB}</span>
+                  <span style={{ color:"var(--text)" }}>{item.nameA} vs {item.nameB}</span>
                   <span style={{ color: getLevel(item.similarity_percent) === "high" ? "var(--danger)" : getLevel(item.similarity_percent) === "medium" ? "var(--warn)" : "var(--accent)" }}> | {item.similarity_percent}%</span>
                   <div style={{ color:"#666", marginTop:"2px" }}>{item.timestamp}</div>
                 </div>
@@ -1560,14 +1608,14 @@ export default function App() {
         )}
 
         <div className="mode-tabs">
-          <button className={`mode-tab${mode === "pair"  ? " active" : ""}`} onClick={() => { setMode("pair");  setError(""); }}>⇄ Pair Check</button>
-          <button className={`mode-tab${mode === "otm"   ? " active" : ""}`} onClick={() => { setMode("otm");   setError(""); }}>🎯 One-to-Many</button>
-          <button className={`mode-tab${mode === "batch" ? " active" : ""}`} onClick={() => { setMode("batch"); setError(""); }}>📊 Batch Matrix</button>
+          <button className={`mode-tab${mode === "pair"  ? " active" : ""}`} onClick={() => { setMode("pair");  setError(""); }}>Pair Check</button>
+          <button className={`mode-tab${mode === "otm"   ? " active" : ""}`} onClick={() => { setMode("otm");   setError(""); }}>One-to-Many</button>
+          <button className={`mode-tab${mode === "batch" ? " active" : ""}`} onClick={() => { setMode("batch"); setError(""); }}>Batch Matrix</button>
         </div>
 
         {mode === "otm" && (
           <div style={{ background:"linear-gradient(135deg, rgba(13,164,235,0.08), rgba(0,229,160,0.04))", border:"1px solid rgba(13,164,235,0.25)", borderRadius:"10px", padding:"12px 16px", marginBottom:"1.5rem", fontFamily:"var(--mono)", fontSize:"11px", color:"#aaa", lineHeight:"1.8" }}>
-            <strong style={{ color:"#0da4eb" }}>🎯 One-to-Many Mode</strong> — Upload one base/source file, then upload all student submissions. Every submission is compared against the source.
+            <strong style={{ color:"#0da4eb" }}>One-to-Many Mode</strong> — Upload one base/source file, then upload all student submissions. Every submission is compared against the source.
             <div style={{ marginTop:"6px", display:"flex", gap:"16px", flexWrap:"wrap" }}>
               <span>✓ Live leaderboard ranked by similarity</span>
               <span>✓ Risk flags: High / Medium / Low / Clean</span>
@@ -1583,16 +1631,16 @@ export default function App() {
             <DropZone label="File B — Suspect"  file={fileB} onFile={(f) => { setFileB(f); setIsFromHistory(false); }} onRemove={() => setFileB(null)} />
           </div>
           {fileA && fileB && <div style={{ textAlign:"center", marginBottom:"0.75rem" }}>
-            <button className="glass-btn" style={{ margin:"0 auto" }} onClick={swapFiles}>⇄ Swap Files</button>
+            <button className="glass-btn" style={{ margin:"0 auto" }} onClick={swapFiles}>Swap Files</button>
           </div>}
           <button className={`check-btn${loading ? " busy" : ""}`} onClick={handleCheck} disabled={loading || !fileA || !fileB}>
-            {loading ? <><span className="spin" />Analyzing — running AI twice for accuracy...</> : "→ Check for Plagiarism"}
+            {loading ? <><span className="spin" />Analyzing — running AI twice for accuracy...</> : "Check for Plagiarism"}
           </button>
           {error && <div className="err">⚠ {error}</div>}
 
           {result && (<div className="results">
             <div className="section-label">Analysis results</div>
-            {isFromHistory && <div className="history-notice">📜 Viewing from history — re-upload files to see the diff</div>}
+            {isFromHistory && <div className="history-notice">Viewing from history — re-upload files to see the diff</div>}
             {result.ai_fallback && <AiFallbackBanner />}
             <div className="score-card">
               <div className="score-inner">
@@ -1605,16 +1653,16 @@ export default function App() {
                   <div className="stat-item"><div className="stat-label">Plagiarism</div><div className="stat-value" style={{ color:"#ff4f4f" }}>{result.similarity_percent}%</div></div>
                 </div>
                 <div className="prog-bar"><div className="prog-fill" style={{ width:`${humanScore}%` }} /></div>
-                {result.ai_reason && <div style={{ marginTop:"10px", fontSize:"11px", color:"var(--muted)", fontFamily:"var(--mono)", lineHeight:"1.6" }}>🤖 {result.ai_reason}</div>}
+                {result.ai_reason && <div style={{ marginTop:"10px", fontSize:"11px", color:"var(--muted)", fontFamily:"var(--mono)", lineHeight:"1.6" }}>AI: {result.ai_reason}</div>}
               </div>
               <div className="score-info">
                 <div className={`verdict-pill pill-${level}`}>{getVerdict(result.similarity_percent)}</div>
                 <div className="score-summary">{result.summary}</div>
-                <div className="lang-row">{result.language_a} → {result.language_b}</div>
+                <div className="lang-row">{result.language_a} vs {result.language_b}</div>
               </div>
               <div className="download-row">
-                <button className="glass-btn" onClick={downloadPDF}>📄 PDF Report</button>
-                <button className="glass-btn" onClick={downloadReport}>⬇ JSON Report</button>
+                <button className="glass-btn" onClick={downloadPDF}>PDF Report</button>
+                <button className="glass-btn" onClick={downloadReport}>JSON Report</button>
               </div>
             </div>
             <div className="section-label">Algorithmic scores — 100% deterministic, fully reliable</div>
@@ -1648,13 +1696,13 @@ export default function App() {
 
         {mode === "batch" && (<>
           <BatchDropZone files={batchFiles} onFiles={addBatchFiles} onRemoveFile={removeBatchFile} />
-          {batchFiles.length > 0 && batchFiles.length < 3 && <div className="err" style={{ marginBottom:"1rem" }}>⚠ Add at least {3 - batchFiles.length} more file{3 - batchFiles.length > 1 ? "s" : ""}.</div>}
+          {batchFiles.length > 0 && batchFiles.length < 3 && <div className="err" style={{ marginBottom:"1rem" }}>Add at least {3 - batchFiles.length} more file{3 - batchFiles.length > 1 ? "s" : ""}.</div>}
           {batchFiles.length >= 3 && <div style={{ fontFamily:"var(--mono)", fontSize:"12px", color:"var(--muted)", marginBottom:"1rem", padding:"10px 14px", background:"var(--surface)", borderRadius:"8px", border:"1px solid var(--border)" }}>
-            📊 {batchFiles.length} files → {batchTotalPairs} pairs · AI runs twice per pair, falls back to algorithms if unavailable
+            {batchFiles.length} files — {batchTotalPairs} pairs · AI runs twice per pair, falls back to algorithms if unavailable
             <span style={{ color:"var(--accent)", marginLeft:"12px" }}>Cmd+Enter to run</span>
           </div>}
           <button className={`check-btn${batchRunning ? " busy" : ""}`} onClick={handleBatchCheck} disabled={batchRunning || batchFiles.length < 3}>
-            {batchRunning ? <><span className="spin" />Analyzing {batchProgress.done}/{batchProgress.total} pairs...</> : `→ Run Batch Analysis (${batchTotalPairs} pairs)`}
+            {batchRunning ? <><span className="spin" />Analyzing {batchProgress.done}/{batchProgress.total} pairs...</> : `Run Batch Analysis (${batchTotalPairs} pairs)`}
           </button>
           {batchRunning && batchProgress.total > 0 && <div className="batch-progress" style={{ marginTop:"-1rem", marginBottom:"1.5rem" }}>
             <div className="batch-status"><span>Comparing pairs...</span><span style={{ color:"var(--accent)" }}>{batchProgress.done} / {batchProgress.total}</span></div>
@@ -1665,7 +1713,7 @@ export default function App() {
           {(Object.keys(batchMatrix).length > 0 || batchLoadingCells.size > 0) && (<>
             <div className="section-label">
               Similarity matrix — {batchDoneCount}/{batchTotalPairs} pairs analyzed
-              {batchDoneCount === batchTotalPairs && !batchRunning && <span style={{ color:"var(--accent)", marginLeft:"10px" }}>✓ Complete</span>}
+              {batchDoneCount === batchTotalPairs && !batchRunning && <span style={{ color:"var(--accent)", marginLeft:"10px" }}>Complete</span>}
             </div>
             <BatchMatrix files={batchFiles} matrix={batchMatrix} loadingCells={batchLoadingCells} onCellClick={openModal} />
           </>)}
@@ -1675,8 +1723,8 @@ export default function App() {
       {modalData && (
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal-box" onClick={(e) => e.stopPropagation()}>
-            <button className="modal-close" onClick={closeModal}>✕ Close</button>
-            <div className="modal-title">📄 {batchFiles[modalData.iA]?.name} ↔ 📄 {batchFiles[modalData.iB]?.name}</div>
+            <button className="modal-close" onClick={closeModal}>X Close</button>
+            <div className="modal-title">{batchFiles[modalData.iA]?.name} vs {batchFiles[modalData.iB]?.name}</div>
             <ResultDetail
               result={modalData.result}
               fileAName={batchFiles[modalData.iA]?.name}
