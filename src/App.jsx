@@ -273,9 +273,9 @@ Return exactly:
 }`;
 
   const payload = {
-    model: "llama-3.3-70b-versatile",
+    model: "llama-3.1-8b-instant",
     temperature: 0,
-    max_tokens: 2048,
+    max_tokens: 500,
     response_format: { type: "json_object" },
     messages: [
       { role: "system", content: "Return ONLY valid JSON. No text, no markdown. Be consistent." },
