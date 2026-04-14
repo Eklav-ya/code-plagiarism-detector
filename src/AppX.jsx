@@ -572,7 +572,7 @@ const CSS = `
   .score-card {
     background: var(--s1); border: 1px solid var(--b2); border-radius: 18px;
     padding: 2.5rem; margin-bottom: 1.25rem;
-    display: grid; grid-template-columns: auto 1fr; gap: 2.5rem; align-items: center;
+    display: grid; grid-template-columns: 180px 1fr; gap: 2.5rem; align-items: center;
   }
   @media(max-width:640px) { .score-card { grid-template-columns: 1fr; gap: 1.5rem; } }
   .score-inner { display: contents; }
@@ -1753,24 +1753,28 @@ export default function App({ user, onLogout }) {
               {isFromHistory && <div className="history-notice">📂 Viewing from history — re-upload files to see the diff</div>}
               {result.ai_fallback && <AiFallbackBanner />}
               <div className="score-card">
-                <div className="score-inner">
                   <ScoreRing pct={result.similarity_percent} level={level} />
+
+                  
+                <div className="score-info">
+                  {result.ai_reason && (<div style={{ marginTop:"10px", fontSize:"11px", color:"var(--muted)", fontFamily:"var(--mono)", lineHeight:"1.6" }}>
+                    AI: {result.ai_reason}</div>)}
+                  <div className={`verdict-pill pill-${level}`}>{getVerdict(result.similarity_percent)}</div>
+                  <div className="score-summary">{result.summary}</div>
+                  <div className="lang-row">{result.language_a} vs {result.language_b}</div>
+                
                   <div className="stat-row">
                     <div className="stat-item"><div className="stat-label">Human-written</div><div className="stat-value" style={{ color:"var(--safe)" }}>{humanScore}%</div></div>
                     <div className="stat-item"><div className="stat-label">AI-generated</div><div className="stat-value" style={{ color:"#b08dff" }}>{result.ai_generated_likelihood ?? "—"}%</div></div>
                     <div className="stat-item"><div className="stat-label">Plagiarism</div><div className="stat-value" style={{ color:"var(--danger)" }}>{result.similarity_percent}%</div></div>
                   </div>
-                  {result.ai_reason && <div style={{ marginTop:"10px", fontSize:"11px", color:"var(--muted)", fontFamily:"var(--mono)", lineHeight:"1.6" }}>AI: {result.ai_reason}</div>}
-                </div>
-                <div className="score-info">
-                  <div className={`verdict-pill pill-${level}`}>{getVerdict(result.similarity_percent)}</div>
-                  <div className="score-summary">{result.summary}</div>
-                  <div className="lang-row">{result.language_a} vs {result.language_b}</div>
-                </div>
-                <div className="download-row">
+                  <div className="download-row">
                   <button className="glass-btn" onClick={downloadPDF}>PDF Report</button>
                   <button className="glass-btn" onClick={downloadReport}>JSON Report</button>
                 </div>
+                
+                </div>
+                
               </div>
               <div className="section-label">Algorithmic scores — 100% deterministic, fully reliable</div>
               <AlgoScores result={result} />
