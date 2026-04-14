@@ -3,7 +3,7 @@ import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyAowCfGSAopTpj0mb8EOqr6Qgnorp6OUJ8",
+  apiKey: process.env.GROQ_API_KEY,
   authDomain: "code-plagiarism-detector-10636.firebaseapp.com",
   projectId: "code-plagiarism-detector-10636",
   storageBucket: "code-plagiarism-detector-10636.firebasestorage.app",
