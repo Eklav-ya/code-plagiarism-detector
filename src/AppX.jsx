@@ -1755,10 +1755,10 @@ export default function App({ user, onLogout }) {
               <div className="score-card">
                   <ScoreRing pct={result.similarity_percent} level={level} />
 
-                  
+
                 <div className="score-info">
                   {result.ai_reason && (<div style={{ marginTop:"10px", fontSize:"11px", color:"var(--muted)", fontFamily:"var(--mono)", lineHeight:"1.6" }}>
-                    AI: {result.ai_reason}</div>)}
+                    AI Analysis: {result.ai_reason}</div>)}
                   <div className={`verdict-pill pill-${level}`}>{getVerdict(result.similarity_percent)}</div>
                   <div className="score-summary">{result.summary}</div>
                   <div className="lang-row">{result.language_a} vs {result.language_b}</div>
